@@ -33,6 +33,7 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
 
   const next = searchParams.get("next") || "/dashboard";
+  const urlError = searchParams.get("error");
 
   const signInWithGoogle = async () => {
     setLoading(true);
@@ -77,8 +78,15 @@ export function LoginForm() {
             {loading ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
             Continue with Google
           </Button>
-          {error && (
-            <p className="text-center text-sm text-destructive">{error}</p>
+          {(error || urlError) && (
+            <p className="text-center text-sm text-destructive">
+              {error ??
+                (urlError === "exchange_failed"
+                  ? "Sign-in session could not be established. Please try again."
+                  : urlError === "no_code"
+                    ? "Sign-in was interrupted. Please try again."
+                    : `Sign-in failed: ${urlError}`)}
+            </p>
           )}
           <p className="text-center text-xs text-muted-foreground">
             By continuing, you agree to our Terms of Service and Privacy Policy.
