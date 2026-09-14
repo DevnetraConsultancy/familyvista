@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -17,6 +17,7 @@ import { useUIStore } from "@/lib/store";
 import { useAuth } from "@/components/auth-provider";
 import { AlbumSidebar } from "@/components/layout/album-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { HelpDialog } from "@/components/help-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -66,6 +67,25 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAlbumPage = pathname.startsWith("/dashboard/album/");
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // "S" toggles the sidebar (except while typing in inputs)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable)
+      )
+        return;
+      if ((e.key === "s" || e.key === "S") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        toggleSidebar();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleSidebar]);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -121,6 +141,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             <Trash2 className="h-4 w-4" />
             Trash
           </Link>
+          <p className="mt-2 hidden px-2 text-center text-[10px] leading-relaxed text-muted-foreground/70 lg:block">
+            Made with ♥ by Devnetra Consultancy
+          </p>
         </div>
       </aside>
 
@@ -151,6 +174,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-1.5">
+            <HelpDialog />
             <ThemeToggle />
             <UserMenu />
           </div>

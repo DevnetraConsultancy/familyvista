@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { HelpDialog } from "@/components/help-dialog";
 import { GoogleSignInButton } from "@/components/google-signin-button";
 import {
   Images,
@@ -11,6 +12,7 @@ import {
   Sparkles,
   Trash2,
   Sun,
+  Heart,
 } from "lucide-react";
 
 const features = [
@@ -65,6 +67,7 @@ export default async function Home() {
             FamilyVista
           </div>
           <div className="flex items-center gap-2">
+            <HelpDialog trigger="labeled" />
             <ThemeToggle />
           </div>
         </div>
@@ -139,10 +142,57 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-border/50 py-8">
-        <div className="mx-auto flex max-w-6xl items-center justify-center px-6 text-sm text-muted-foreground">
-          FamilyVista — built with love for families everywhere.
+      {/* Footer — premium brand signature */}
+      <footer className="relative border-t border-border/50">
+        <div
+          className="hero-gradient pointer-events-none absolute inset-0 opacity-60"
+          aria-hidden
+        />
+        <div className="relative mx-auto flex max-w-6xl flex-col items-center gap-3 px-6 py-14 text-center">
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            Made with
+            <Heart
+              className="h-3.5 w-3.5 animate-pulse fill-rose-500 text-rose-500"
+              aria-hidden
+            />
+            care by
+          </p>
+          <p className="font-serif text-2xl font-bold tracking-tight sm:text-3xl">
+            <span className="bg-gradient-to-r from-primary via-foreground/80 to-primary bg-clip-text text-transparent">
+              Devnetra Consultancy
+            </span>
+          </p>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            <a
+              className="transition-colors hover:text-foreground"
+              href="mailto:devnetraconsultancy@gmail.com"
+            >
+              devnetraconsultancy@gmail.com
+            </a>
+            <span aria-hidden className="opacity-40">
+              ·
+            </span>
+            <a
+              className="transition-colors hover:text-foreground"
+              href="https://instagram.com/scien_nee"
+              target="_blank"
+              rel="noreferrer"
+            >
+              @scien_nee
+            </a>
+            <span aria-hidden className="opacity-40">
+              ·
+            </span>
+            <span>
+              Need help? Press{" "}
+              <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                ?
+              </kbd>
+            </span>
+          </div>
+          <p className="mt-4 text-[11px] text-muted-foreground/60">
+            © {new Date().getFullYear()} Devnetra Consultancy · FamilyVista
+          </p>
         </div>
       </footer>
     </div>

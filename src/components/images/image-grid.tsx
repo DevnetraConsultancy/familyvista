@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -47,6 +47,14 @@ export function ImageGrid({
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const { selectionMode, selectedIds, toggleSelected } = useUIStore();
+  const setViewMode = useUIStore((s) => s.setViewMode);
+
+  // "Play" view mode opens the slideshow immediately
+  useEffect(() => {
+    if (viewMode === "play" && images.length > 0 && viewerIndex === null) {
+      setViewerIndex(0);
+    }
+  }, [viewMode, images.length, viewerIndex]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -128,7 +136,10 @@ export function ImageGrid({
         <ImageViewer
           images={images}
           index={viewerIndex}
-          onClose={() => setViewerIndex(null)}
+          onClose={() => {
+            setViewMode("large");
+            setViewerIndex(null);
+          }}
           onIndexChange={setViewerIndex}
         />
       )}
