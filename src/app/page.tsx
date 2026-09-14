@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { GoogleSignInButton } from "@/components/google-signin-button";
 import {
   Images,
   FolderTree,
@@ -66,16 +66,13 @@ export default async function Home() {
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button asChild>
-              <Link href="/login">Open App</Link>
-            </Button>
           </div>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="hero-gradient">
-        <div className="mx-auto flex max-w-6xl flex-col items-center px-6 pb-24 pt-28 text-center">
+      {/* Hero with centered Google sign-in */}
+      <section className="hero-gradient relative overflow-hidden">
+        <div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 pb-24 pt-24 text-center">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm text-primary">
             <Sparkles className="h-3.5 w-3.5" />
             Your memories deserve a beautiful home
@@ -91,13 +88,13 @@ export default async function Home() {
             Create albums, upload photos in bulk, drag to reorder, group by
             occasion, and relive everything in a gorgeous full-screen slideshow.
           </p>
-          <div className="mt-10 flex flex-col gap-3 sm:flex-row">
-            <Button size="lg" className="h-12 px-8 text-base" asChild>
-              <Link href="/login">Start your family album</Link>
-            </Button>
-            <Button size="lg" variant="outline" className="h-12 px-8 text-base" asChild>
-              <a href="#features">See features</a>
-            </Button>
+
+          {/* Premium centered sign-in */}
+          <div className="mt-10 flex w-full flex-col items-center">
+            <GoogleSignInButton redirectTo="/dashboard" />
+            <p className="mt-3 text-xs text-muted-foreground">
+              Free forever · Takes less than a minute
+            </p>
           </div>
 
           {/* Mock preview strip */}
