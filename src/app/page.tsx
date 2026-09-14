@@ -1,0 +1,153 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  Images,
+  FolderTree,
+  GripVertical,
+  Layers,
+  Sparkles,
+  Trash2,
+  Sun,
+} from "lucide-react";
+
+const features = [
+  {
+    icon: FolderTree,
+    title: "Albums & Sub-Albums",
+    desc: "Organize memories into nested albums that make sense for your family.",
+  },
+  {
+    icon: Images,
+    title: "Bulk Upload",
+    desc: "Drop in hundreds of photos at once. Direct-to-storage, blazing fast.",
+  },
+  {
+    icon: GripVertical,
+    title: "Drag & Drop Ordering",
+    desc: "Rearrange photos exactly how you want with buttery-smooth dragging.",
+  },
+  {
+    icon: Layers,
+    title: "Groups & Views",
+    desc: "Group photos by event or year. Small, large, list, and slideshow views.",
+  },
+  {
+    icon: Sun,
+    title: "Photo Borders",
+    desc: "Add elegant white borders inside or outside each photo, your call.",
+  },
+  {
+    icon: Trash2,
+    title: "Safe Trash",
+    desc: "Nothing disappears by accident. Restore anytime — permanent delete needs a phrase.",
+  },
+];
+
+export default async function Home() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) redirect("/dashboard");
+
+  return (
+    <div className="min-h-screen">
+      {/* Nav */}
+      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/70 backdrop-blur-lg">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+          <div className="flex items-center gap-2 font-bold text-lg tracking-tight">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Images className="h-4 w-4" />
+            </div>
+            FamilyVista
+          </div>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Button asChild>
+              <Link href="/login">Open App</Link>
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Hero */}
+      <section className="hero-gradient">
+        <div className="mx-auto flex max-w-6xl flex-col items-center px-6 pb-24 pt-28 text-center">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm text-primary">
+            <Sparkles className="h-3.5 w-3.5" />
+            Your memories deserve a beautiful home
+          </div>
+          <h1 className="max-w-3xl text-5xl font-extrabold tracking-tight sm:text-6xl">
+            Family albums,
+            <br />
+            <span className="bg-gradient-to-r from-primary via-primary/80 to-accent-foreground bg-clip-text text-transparent">
+              beautifully organized
+            </span>
+          </h1>
+          <p className="mt-6 max-w-xl text-lg text-muted-foreground">
+            Create albums, upload photos in bulk, drag to reorder, group by
+            occasion, and relive everything in a gorgeous full-screen slideshow.
+          </p>
+          <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+            <Button size="lg" className="h-12 px-8 text-base" asChild>
+              <Link href="/login">Start your family album</Link>
+            </Button>
+            <Button size="lg" variant="outline" className="h-12 px-8 text-base" asChild>
+              <a href="#features">See features</a>
+            </Button>
+          </div>
+
+          {/* Mock preview strip */}
+          <div className="mt-16 grid w-full max-w-4xl grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              "from-amber-200/60 to-orange-300/60",
+              "from-rose-200/60 to-pink-300/60",
+              "from-sky-200/60 to-indigo-300/60",
+              "from-emerald-200/60 to-teal-300/60",
+            ].map((grad, i) => (
+              <div
+                key={i}
+                className={`aspect-[4/3] rounded-xl bg-gradient-to-br ${grad} border border-border/40 shadow-lg transition-transform hover:-translate-y-1`}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section id="features" className="border-t border-border/50 py-24">
+        <div className="mx-auto max-w-6xl px-6">
+          <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
+            Everything your family photo archive needs
+          </h2>
+          <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((f) => (
+              <div
+                key={f.title}
+                className="group rounded-xl border border-border/60 bg-card p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
+              >
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-primary/12 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                  <f.icon className="h-5 w-5" />
+                </div>
+                <h3 className="font-semibold">{f.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                  {f.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-border/50 py-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-center px-6 text-sm text-muted-foreground">
+          FamilyVista — built with love for families everywhere.
+        </div>
+      </footer>
+    </div>
+  );
+}

@@ -1,0 +1,454 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import {
+  Grid2x2,
+  Grid3x3,
+  List,
+  Play,
+  Frame,
+  MoreVertical,
+  Pencil,
+  Copy,
+  Trash2,
+  FolderInput,
+  CheckSquare,
+  X,
+} from "lucide-react";
+import { useAlbums } from "@/lib/hooks/use-albums";
+import { useImages } from "@/lib/hooks/use-images";
+import { useUIStore } from "@/lib/store";
+import { UploadZone } from "@/components/images/upload-zone";
+import { ImageGrid } from "@/components/images/image-grid";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
+import { cn, stripExtension, getFileExtension } from "@/lib/utils";
+import type { Image } from "@/lib/types";
+import { toast } from "sonner";
+
+const VIEW_MODES = [
+  { mode: "small", icon: Grid3x3, label: "Small tiles" },
+  { mode: "large", icon: Grid2x2, label: "Large tiles" },
+  { mode: "list", icon: List, label: "List" },
+  { mode: "play", icon: Play, label: "Slideshow" },
+] as const;
+
+export default function AlbumPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const { albums, renameAlbum } = useAlbums();
+  const {
+    images,
+    groups,
+    loading,
+    uploadFiles,
+    reorderImages,
+    renameImage,
+    duplicateImages,
+    trashImages,
+  } = useImages(id);
+
+  const {
+    viewMode,
+    setViewMode,
+    borderSettings,
+    setBorderSettings,
+    selectionMode,
+    toggleSelectionMode,
+    selectedIds,
+    clearSelection,
+  } = useUIStore();
+
+  const album = albums.find((a) => a.id === id);
+
+  const [menuImage, setMenuImage] = useState<Image | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [captionValue, setCaptionValue] = useState("");
+  const [deletePhraseOpen, setDeletePhraseOpen] = useState(false);
+  const [deletePhrase, setDeletePhrase] = useState("");
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveTargetIds, setMoveTargetIds] = useState<string[]>([]);
+
+  const targetIds = useMemo(
+    () => (menuImage ? [menuImage.id] : Array.from(selectedIds)),
+    [menuImage, selectedIds]
+  );
+
+  const groupedImageList = useMemo(() => {
+    // group ordering: images with group in group order, then ungrouped
+    const groupOrder = new Map(groups.map((g, i) => [g.id, i]));
+    return [...images].sort((a, b) => {
+      const ga = a.group_id ? (groupOrder.get(a.group_id) ?? 999) : 999;
+      const gb = b.group_id ? (groupOrder.get(b.group_id) ?? 999) : 999;
+      if (ga !== gb) return ga - gb;
+      return a.sort_order - b.sort_order;
+    });
+  }, [images, groups]);
+
+  const handleRenameOpen = (img: Image | null) => {
+    const target = img ?? images.find((i) => i.id === Array.from(selectedIds)[0]);
+    if (!target) return;
+    setMenuImage(null);
+    setRenameValue(stripExtension(target.file_name));
+    setCaptionValue(target.caption ?? "");
+    setRenameOpen(true);
+  };
+
+  const handleRenameSave = async () => {
+    const id0 = menuImage?.id ?? Array.from(selectedIds)[0];
+    if (!id0) return;
+    const img = images.find((i) => i.id === id0);
+    if (!img) return;
+    const ext = getFileExtension(img.file_name);
+    const ok = await renameImage(id0, `${renameValue.trim()}${ext}`, captionValue || undefined);
+    if (ok) {
+      toast.success("Photo updated");
+      setRenameOpen(false);
+    }
+  };
+
+  const handleTrash = async (ids: string[]) => {
+    setMenuImage(null);
+    const ok = await trashImages(ids);
+    if (ok) {
+      toast.success(`${ids.length} photo(s) moved to trash`);
+      clearSelection();
+    }
+  };
+
+  const handleDuplicate = async (ids: string[]) => {
+    setMenuImage(null);
+    await duplicateImages(ids);
+    toast.success(`${ids.length} photo(s) duplicated`);
+    clearSelection();
+  };
+
+  const openMove = (ids: string[]) => {
+    setMenuImage(null);
+    setMoveTargetIds(ids);
+    setMoveOpen(true);
+  };
+
+  if (!album && !loading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+        <p className="text-lg font-semibold">Album not found</p>
+        <p className="text-sm text-muted-foreground">
+          It may have been deleted or belongs to another account.
+        </p>
+        <Button variant="outline" onClick={() => router.push("/dashboard")}>
+          Back to all albums
+        </Button>
+      </div>
+    );
+  }
+
+  const sortedIdsForReorder = (orderedIds: string[]) => {
+    // persist global order within the current flat view
+    reorderImages(orderedIds);
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Album header + toolbar */}
+      <div className="shrink-0 border-b px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="truncate text-xl font-bold tracking-tight">
+              {album?.name ?? "…"}
+            </h1>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {images.length} photos
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* View modes */}
+            <div className="flex rounded-lg border p-0.5">
+              {VIEW_MODES.map(({ mode, icon: Icon, label }) => (
+                <button
+                  key={mode}
+                  title={label}
+                  onClick={() => setViewMode(mode)}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent",
+                    viewMode === mode && "bg-primary text-primary-foreground hover:bg-primary"
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </button>
+              ))}
+            </div>
+
+            {/* Borders popover */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <Frame className="h-3.5 w-3.5" />
+                  Borders
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 space-y-4" align="end">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="border-enabled">White borders</Label>
+                  <Switch
+                    id="border-enabled"
+                    checked={borderSettings.enabled}
+                    onCheckedChange={(v) => setBorderSettings({ enabled: v })}
+                  />
+                </div>
+                {borderSettings.enabled && (
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <Label>Width</Label>
+                        <span className="text-muted-foreground">
+                          {borderSettings.width}px
+                        </span>
+                      </div>
+                      <Slider
+                        min={2}
+                        max={40}
+                        step={1}
+                        value={[borderSettings.width]}
+                        onValueChange={([v]) => setBorderSettings({ width: v })}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label>Inside photo (crop effect)</Label>
+                      <Switch
+                        checked={borderSettings.inside}
+                        onCheckedChange={(v) => setBorderSettings({ inside: v })}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {borderSettings.inside
+                        ? "Border overlays the photo edges."
+                        : "Border sits outside, expanding the tile."}
+                    </p>
+                  </>
+                )}
+              </PopoverContent>
+            </Popover>
+
+            {/* Selection toggle */}
+            <Button
+              variant={selectionMode ? "secondary" : "outline"}
+              size="sm"
+              className="gap-1.5"
+              onClick={toggleSelectionMode}
+            >
+              {selectionMode ? <X className="h-3.5 w-3.5" /> : <CheckSquare className="h-3.5 w-3.5" />}
+              {selectionMode ? "Exit select" : "Select"}
+            </Button>
+
+            {/* Bulk actions */}
+            {selectedIds.size > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="secondary">
+                    {selectedIds.size} selected
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleDuplicate(Array.from(selectedIds))}>
+                    <Copy />
+                    Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openMove(Array.from(selectedIds))}>
+                    <FolderInput />
+                    Move to album…
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => handleTrash(Array.from(selectedIds))}
+                    className="text-destructive"
+                  >
+                    <Trash2 />
+                    Trash
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </div>
+
+        {/* Groups strip */}
+        {groups.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {groups.map((g) => (
+              <span
+                key={g.id}
+                className="rounded-full border bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground"
+              >
+                {g.name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-4">
+        {images.length === 0 && !loading ? (
+          <UploadZone albumId={id} uploadFiles={uploadFiles} />
+        ) : (
+          <>
+            <ImageGrid
+              images={groupedImageList}
+              onReorder={sortedIdsForReorder}
+              onOpenMenu={(img, anchor) => setMenuImage(img)}
+              onRename={handleRenameOpen}
+              onTrash={handleTrash}
+            />
+            <div className="mt-4">
+              <UploadZone albumId={id} uploadFiles={uploadFiles} />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Per-image context dropdown (rendered at toolbar level via right-click → we use a floating menu anchored by context menu inside grid; this dialog set handles actions) */}
+
+      {/* Rename dialog */}
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit photo</DialogTitle>
+            <DialogDescription>
+              Rename the file and optionally add a caption.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Name</Label>
+              <Input
+                autoFocus
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Caption</Label>
+              <Input
+                value={captionValue}
+                onChange={(e) => setCaptionValue(e.target.value)}
+                placeholder="A short caption…"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRenameSave} disabled={!renameValue.trim()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move dialog */}
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Move {moveTargetIds.length} photo(s)</DialogTitle>
+            <DialogDescription>Choose a destination album.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-64 space-y-1 overflow-y-auto scrollbar-thin">
+            {albums
+              .filter((a) => a.id !== id)
+              .map((a) => (
+                <button
+                  key={a.id}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-accent"
+                  onClick={async () => {
+                    const supabase = (await import("@/lib/supabase/client")).createClient();
+                    const { error } = await supabase
+                      .from("images")
+                      .update({ album_id: a.id })
+                      .in("id", moveTargetIds);
+                    if (!error) {
+                      toast.success(`Moved to “${a.name}”`);
+                      setMoveOpen(false);
+                      clearSelection();
+                    } else {
+                      toast.error("Move failed");
+                    }
+                  }}
+                >
+                  <FolderInput className="h-4 w-4 text-primary" />
+                  {a.name}
+                </button>
+              ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete-phrase dialog for bulk trash */}
+      <AlertDialog open={deletePhraseOpen} onOpenChange={setDeletePhraseOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Move to trash?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Photos will be moved to Trash where they can be restored. Type
+              <b> DELETE</b> to confirm.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            autoFocus
+            value={deletePhrase}
+            onChange={(e) => setDeletePhrase(e.target.value)}
+            placeholder="DELETE"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deletePhrase.trim().toUpperCase() !== "DELETE"}
+              onClick={() => {
+                setDeletePhraseOpen(false);
+                setDeletePhrase("");
+                handleTrash(Array.from(selectedIds));
+              }}
+            >
+              Move to Trash
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
