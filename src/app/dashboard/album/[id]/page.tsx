@@ -15,10 +15,15 @@ import {
   FolderInput,
   CheckSquare,
   X,
+  Share2,
+  UserPlus,
+  Images,
 } from "lucide-react";
 import { useAlbums } from "@/lib/hooks/use-albums";
 import { useImages } from "@/lib/hooks/use-images";
 import { useUIStore } from "@/lib/store";
+import { useAuth } from "@/components/auth-provider";
+import { ShareDialog } from "@/components/share-dialog";
 import { UploadZone } from "@/components/images/upload-zone";
 import { ImageGrid } from "@/components/images/image-grid";
 import { Button } from "@/components/ui/button";
@@ -67,6 +72,7 @@ const VIEW_MODES = [
 export default function AlbumPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
   const { albums, renameAlbum } = useAlbums();
   const {
     images,
@@ -91,7 +97,10 @@ export default function AlbumPage() {
   } = useUIStore();
 
   const album = albums.find((a) => a.id === id);
+  const isOwner = !!album && album.user_id === user?.id;
+  const readOnly = !!album && !isOwner;
 
+  const [shareOpen, setShareOpen] = useState(false);
   const [menuImage, setMenuImage] = useState<Image | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -195,6 +204,19 @@ export default function AlbumPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
+            {/* Share — owners can invite people to view the album */}
+            {isOwner && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setShareOpen(true)}
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                Share
+              </Button>
+            )}
+
             {/* View modes */}
             <div className="flex rounded-lg border p-0.5">
               {VIEW_MODES.map(({ mode, icon: Icon, label }) => (
@@ -212,8 +234,9 @@ export default function AlbumPage() {
               ))}
             </div>
 
-            {/* Borders popover */}
-            <Popover>
+            {/* Borders popover (view preference — works for shared viewers too) */}
+            {!readOnly && (
+              <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-1.5">
                   <Frame className="h-3.5 w-3.5" />
@@ -260,19 +283,22 @@ export default function AlbumPage() {
                     </p>
                   </>
                 )}
-              </PopoverContent>
-            </Popover>
+                </PopoverContent>
+              </Popover>
+            )}
 
             {/* Selection toggle */}
-            <Button
-              variant={selectionMode ? "secondary" : "outline"}
-              size="sm"
-              className="gap-1.5"
-              onClick={toggleSelectionMode}
-            >
-              {selectionMode ? <X className="h-3.5 w-3.5" /> : <CheckSquare className="h-3.5 w-3.5" />}
-              {selectionMode ? "Exit select" : "Select"}
-            </Button>
+            {!readOnly && (
+              <Button
+                variant={selectionMode ? "secondary" : "outline"}
+                size="sm"
+                className="gap-1.5"
+                onClick={toggleSelectionMode}
+              >
+                {selectionMode ? <X className="h-3.5 w-3.5" /> : <CheckSquare className="h-3.5 w-3.5" />}
+                {selectionMode ? "Exit select" : "Select"}
+              </Button>
+            )}
 
             {/* Bulk actions */}
             {selectedIds.size > 0 && (
@@ -293,11 +319,14 @@ export default function AlbumPage() {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => handleTrash(Array.from(selectedIds))}
+                    onClick={() => {
+                      setDeletePhrase("");
+                      setDeletePhraseOpen(true);
+                    }}
                     className="text-destructive"
                   >
                     <Trash2 />
-                    Trash
+                    Move to trash…
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -323,24 +352,45 @@ export default function AlbumPage() {
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-4">
         {images.length === 0 && !loading ? (
-          <UploadZone albumId={id} uploadFiles={uploadFiles} />
+          readOnly ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <Images className="mb-3 h-12 w-12 text-muted-foreground/40" />
+              <h2 className="text-lg font-semibold">This album is empty</h2>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                The owner hasn&apos;t added any photos yet. Check back soon.
+              </p>
+            </div>
+          ) : (
+            <UploadZone albumId={id} uploadFiles={uploadFiles} />
+          )
         ) : (
           <>
             <ImageGrid
               images={groupedImageList}
               onReorder={sortedIdsForReorder}
-              onOpenMenu={(img, anchor) => setMenuImage(img)}
               onRename={handleRenameOpen}
               onTrash={handleTrash}
+              onDuplicate={handleDuplicate}
+              onMove={openMove}
+              readOnly={readOnly}
             />
-            <div className="mt-4">
-              <UploadZone albumId={id} uploadFiles={uploadFiles} />
-            </div>
+            {!readOnly && (
+              <div className="mt-4">
+                <UploadZone albumId={id} uploadFiles={uploadFiles} />
+              </div>
+            )}
           </>
         )}
       </div>
 
       {/* Per-image context dropdown (rendered at toolbar level via right-click → we use a floating menu anchored by context menu inside grid; this dialog set handles actions) */}
+
+      {/* Share dialog */}
+      <ShareDialog
+        album={album ?? null}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
 
       {/* Rename dialog */}
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
@@ -423,8 +473,9 @@ export default function AlbumPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Move to trash?</AlertDialogTitle>
             <AlertDialogDescription>
-              Photos will be moved to Trash where they can be restored. Type
-              <b> DELETE</b> to confirm.
+              {selectedIds.size} photo{selectedIds.size === 1 ? "" : "s"} will
+              be moved to Trash where they can be restored. Type <b>DELETE</b> to
+              confirm.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Input

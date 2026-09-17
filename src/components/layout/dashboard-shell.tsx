@@ -92,10 +92,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "z-30 flex h-full shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-all duration-200",
-          sidebarOpen ? "w-64" : "w-0",
-          "max-lg:absolute max-lg:inset-y-0 max-lg:left-0",
-          !mobileOpen && "max-lg:-translate-x-full max-lg:w-64"
+          "z-30 flex h-full shrink-0 flex-col overflow-hidden border-r bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200",
+          "lg:w-64",
+          !sidebarOpen && "lg:w-0 lg:border-r-0",
+          "max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:w-72 max-lg:border-r-0",
+          mobileOpen ? "max-lg:translate-x-0" : "max-lg:-translate-x-full"
         )}
       >
         <div
@@ -152,16 +153,23 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-3 sm:px-4">
           <div className="flex items-center gap-1.5">
             {/* Show sidebar when hidden, or hamburger on mobile */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden lg:inline-flex"
-              onClick={() => (sidebarOpen ? setMobileOpen(false) : toggleSidebar())}
-              aria-label="Show sidebar"
-              style={{ display: sidebarOpen ? "none" : undefined }}
-            >
-              <PanelLeftOpen />
-            </Button>
+            {(!sidebarOpen || mobileOpen) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hidden lg:inline-flex"
+                onClick={() => {
+                  if (mobileOpen) {
+                    setMobileOpen(false);
+                  } else if (!sidebarOpen) {
+                    toggleSidebar();
+                  }
+                }}
+                aria-label="Show sidebar"
+              >
+                <PanelLeftOpen />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"

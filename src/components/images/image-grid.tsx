@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -21,8 +21,14 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Clock3, CalendarDays, List } from "lucide-react";
-import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { GripVertical, Pencil, Copy, Trash2, FolderInput } from "lucide-react";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 import { useUIStore } from "@/lib/store";
 import type { Image } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
@@ -31,22 +37,27 @@ import { ImageViewer } from "@/components/images/image-viewer";
 interface Props {
   images: Image[];
   onReorder: (orderedIds: string[]) => void;
-  onOpenMenu: (image: Image, anchor: HTMLElement) => void;
   onRename: (img: Image) => void;
   onTrash: (ids: string[]) => void;
+  onDuplicate: (ids: string[]) => void;
+  onMove: (ids: string[]) => void;
+  readOnly?: boolean;
 }
 
 export function ImageGrid({
   images,
   onReorder,
-  onOpenMenu,
   onRename,
   onTrash,
+  onDuplicate,
+  onMove,
+  readOnly = false,
 }: Props) {
   const { viewMode, borderSettings } = useUIStore();
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const { selectionMode, selectedIds, toggleSelected } = useUIStore();
+  const { selectionMode, selectedIds, toggleSelected, clearSelection } =
+    useUIStore();
   const setViewMode = useUIStore((s) => s.setViewMode);
 
   // "Play" view mode opens the slideshow immediately
@@ -106,14 +117,23 @@ export function ImageGrid({
                 key={img.id}
                 image={img}
                 viewMode={viewMode}
+                readOnly={readOnly}
                 onOpen={() => {
-                  if (selectionMode) {
+                  if (selectionMode && !readOnly) {
                     toggleSelected(img.id);
                   } else {
                     setViewerIndex(images.findIndex((i) => i.id === img.id));
                   }
                 }}
-                onOpenMenu={onOpenMenu}
+                onRename={() => onRename(img)}
+                onTrash={() => onTrash([img.id])}
+                onDuplicate={() => onDuplicate([img.id])}
+                onMove={() => onMove([img.id])}
+                onTrashSelected={() => {
+                  const ids = Array.from(selectedIds);
+                  onTrash(ids.length > 0 ? ids : [img.id]);
+                  clearSelection();
+                }}
               />
             ))}
           </div>
@@ -151,13 +171,23 @@ export function ImageGrid({
 function SortableTile({
   image,
   viewMode,
+  readOnly,
   onOpen,
-  onOpenMenu,
+  onRename,
+  onTrash,
+  onDuplicate,
+  onMove,
+  onTrashSelected,
 }: {
   image: Image;
   viewMode: string;
+  readOnly: boolean;
   onOpen: () => void;
-  onOpenMenu: (image: Image, anchor: HTMLElement) => void;
+  onRename: () => void;
+  onTrash: () => void;
+  onDuplicate: () => void;
+  onMove: () => void;
+  onTrashSelected: () => void;
 }) {
   const {
     attributes,
@@ -183,7 +213,7 @@ function SortableTile({
       : { border: `${borderSettings.width}px solid ${borderSettings.color}` }
     : {};
 
-  const dragHandle = (
+  const dragHandle = readOnly ? null : (
     <span
       {...attributes}
       {...listeners}
@@ -192,6 +222,45 @@ function SortableTile({
     >
       <GripVertical className="h-3.5 w-3.5" />
     </span>
+  );
+
+  const menuContent = readOnly ? (
+    <ContextMenuContent>
+      <ContextMenuItem onClick={onOpen}>
+        <Pencil />
+        View
+      </ContextMenuItem>
+    </ContextMenuContent>
+  ) : (
+    <ContextMenuContent>
+      <ContextMenuItem onClick={onOpen}>
+        <Pencil />
+        {viewMode === "list" ? "Open" : "View"}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onRename}>
+        <Pencil />
+        Rename / caption
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onDuplicate}>
+        <Copy />
+        Duplicate
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onMove}>
+        <FolderInput />
+        Move to album…
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={onTrash} className="text-destructive">
+        <Trash2 />
+        Move to trash
+      </ContextMenuItem>
+      {selectedIds.size > 1 && selected && (
+        <ContextMenuItem onClick={onTrashSelected} className="text-destructive">
+          <Trash2 />
+          Trash all {selectedIds.size} selected
+        </ContextMenuItem>
+      )}
+    </ContextMenuContent>
   );
 
   if (viewMode === "list") {
@@ -205,7 +274,6 @@ function SortableTile({
                 selected && "tile-selected"
               )}
               onClick={onOpen}
-              onContextMenu={(e) => onOpenMenu(image, e.currentTarget)}
             >
               <img
                 src={image.thumbnail_url ?? image.original_url}
@@ -223,6 +291,7 @@ function SortableTile({
               {dragHandle}
             </div>
           </ContextMenuTrigger>
+          {menuContent}
         </ContextMenu>
       </div>
     );
@@ -240,9 +309,6 @@ function SortableTile({
             )}
             style={borderStyle}
             onClick={onOpen}
-            onDoubleClick={() => {
-              /* reserved for future */
-            }}
           >
             <img
               src={image.thumbnail_url ?? image.original_url}
@@ -261,6 +327,7 @@ function SortableTile({
             {dragHandle}
           </div>
         </ContextMenuTrigger>
+        {menuContent}
       </ContextMenu>
     </div>
   );

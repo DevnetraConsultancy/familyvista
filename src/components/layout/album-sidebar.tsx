@@ -12,8 +12,11 @@ import {
   Trash2,
   ChevronRight,
   Images,
+  Users,
+  Eye,
 } from "lucide-react";
 import { useAlbums, buildAlbumTree } from "@/lib/hooks/use-albums";
+import { useSharedAlbums } from "@/lib/hooks/use-shared-albums";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -56,6 +59,7 @@ export function AlbumSidebar({ visible }: { visible: boolean }) {
   const pathname = usePathname();
   const { albums, loading, createAlbum, renameAlbum, duplicateAlbum, trashAlbum } =
     useAlbums();
+  const { sharedAlbums } = useSharedAlbums();
   const tree = buildAlbumTree(albums);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -164,6 +168,25 @@ export function AlbumSidebar({ visible }: { visible: boolean }) {
             <br />
             Create your first one below.
           </p>
+        )}
+
+        {/* Shared with me */}
+        {sharedAlbums.length > 0 && (
+          <div className="mt-4">
+            <div className="mb-1 flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Users className="h-3 w-3" />
+              Shared with me
+            </div>
+            <div className="space-y-0.5">
+              {sharedAlbums.map((album) => (
+                <SharedAlbumNode
+                  key={album.id}
+                  album={album}
+                  currentAlbumId={currentAlbumId}
+                />
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
@@ -279,6 +302,32 @@ export function AlbumSidebar({ visible }: { visible: boolean }) {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+// ---- Shared-with-me tree node (read-only) ----
+function SharedAlbumNode({
+  album,
+  currentAlbumId,
+}: {
+  album: Album;
+  currentAlbumId: string | null;
+}) {
+  const active = currentAlbumId === album.id;
+  return (
+    <Link
+      href={`/dashboard/album/${album.id}?shared=1`}
+      className={cn(
+        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-accent",
+        active && "bg-accent font-medium"
+      )}
+    >
+      <Users className="h-4 w-4 shrink-0 text-sky-500" />
+      <span className="min-w-0 flex-1 truncate">{album.name}</span>
+      <span title="View only">
+        <Eye className="h-3 w-3 shrink-0 text-muted-foreground" />
+      </span>
+    </Link>
   );
 }
 
