@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import type { Album } from "@/lib/types";
 
@@ -62,6 +63,7 @@ export function useAlbums() {
 
       if (error) {
         setError(error.message);
+        toast.error(`Could not create album: ${error.message}`);
         return null;
       }
       await fetchAlbums();

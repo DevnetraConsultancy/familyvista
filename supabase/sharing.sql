@@ -1,7 +1,17 @@
 -- ============================================================
--- FamilyVista — Album Sharing (run AFTER the main schema.sql)
--- Paste this whole file into: Supabase Dashboard → SQL Editor → New query → Run
+-- FamilyVista — Album Sharing (run AFTER schema.sql)
+-- v2 — uses JWT email matching. Do NOT subquery auth.users in RLS:
+--       that fails with "permission denied for table users".
 -- ============================================================
+
+-- JWT email helper (safe for RLS, no special privileges needed)
+create or replace function public.current_user_email()
+returns text as $$
+  select lower(coalesce(
+    nullif(current_setting('request.jwt.claims', true)::json ->> 'email', ''),
+    ''
+  ));
+$$ language sql stable;
 
 -- ============ ALBUM SHARES TABLE ============
 -- Each row = one person invited to view one album (read-only).
@@ -15,16 +25,13 @@ create table if not exists public.album_shares (
   created_at timestamptz not null default now()
 );
 
--- One invite per album+email
 create unique index if not exists idx_album_shares_unique
   on public.album_shares(album_id, shared_with_email);
-
 create index if not exists idx_album_shares_owner on public.album_shares(owner_id);
 create index if not exists idx_album_shares_with_user on public.album_shares(shared_with_user_id);
 create index if not exists idx_album_shares_album on public.album_shares(album_id);
 
--- ============ AUTO-ACCEPT WHEN INVITEE SIGNS UP / LOGS IN ============
--- Runs for every new Google-login user: links any pending invites to their user id.
+-- ============ AUTO-ACCEPT PENDING INVITES ON SIGNUP ============
 create or replace function public.link_pending_shares()
 returns trigger as $$
 begin
@@ -42,7 +49,7 @@ create trigger on_auth_user_shares
   after insert on auth.users
   for each row execute function public.link_pending_shares();
 
--- Also link existing users on their next album_shares query (belt & braces):
+-- Link invites for users who already existed before sharing shipped.
 create or replace function public.accept_my_invites()
 returns void as $$
 begin
@@ -57,20 +64,18 @@ $$ language plpgsql security definer;
 -- ============ ROW LEVEL SECURITY ============
 alter table public.album_shares enable row level security;
 
--- Owners see + manage invites for their own albums
 create policy "shares_owner_all" on public.album_shares
   for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
 
--- Invitees can see rows shared with them (by user id OR email match)
 create policy "shares_invitee_read" on public.album_shares
   for select using (
     shared_with_user_id = auth.uid()
-    or lower(shared_with_email) = lower((select email from auth.users where id = auth.uid()))
+    or shared_with_email = public.current_user_email()
   );
 
--- ============ ALBUMS / IMAGES RLS UPDATES (share-aware) ============
--- Drop the strict owner-only policies, replace with owner OR shared-with-me.
+-- ============ SHARE-AWARE POLICIES ============
 drop policy if exists "albums_owner_all" on public.albums;
+drop policy if exists "albums_owner_or_shared" on public.albums;
 create policy "albums_owner_or_shared" on public.albums
   for select using (
     auth.uid() = user_id
@@ -80,7 +85,7 @@ create policy "albums_owner_or_shared" on public.albums
         and s.status = 'accepted'
         and (
           s.shared_with_user_id = auth.uid()
-          or s.shared_with_email = (select email from auth.users where id = auth.uid())
+          or s.shared_with_email = public.current_user_email()
         )
     )
   );
@@ -89,6 +94,7 @@ create policy "albums_owner_write" on public.albums
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 drop policy if exists "images_owner_all" on public.images;
+drop policy if exists "images_shared_read" on public.images;
 create policy "images_shared_read" on public.images
   for select using (
     auth.uid() = user_id
@@ -99,7 +105,7 @@ create policy "images_shared_read" on public.images
         and s.status = 'accepted'
         and (
           s.shared_with_user_id = auth.uid()
-          or s.shared_with_email = (select email from auth.users where id = auth.uid())
+          or s.shared_with_email = public.current_user_email()
         )
     )
   );
@@ -107,8 +113,8 @@ create policy "images_shared_read" on public.images
 create policy "images_owner_write" on public.images
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- Groups are read-only-visible too (harmless, keeps shared albums rendering)
 drop policy if exists "groups_owner_all" on public.image_groups;
+drop policy if exists "groups_shared_read" on public.image_groups;
 create policy "groups_shared_read" on public.image_groups
   for select using (
     exists (
@@ -122,7 +128,7 @@ create policy "groups_shared_read" on public.image_groups
               and s.status = 'accepted'
               and (
                 s.shared_with_user_id = auth.uid()
-                or s.shared_with_email = (select email from auth.users where id = auth.uid())
+                or s.shared_with_email = public.current_user_email()
               )
           )
         )
@@ -153,7 +159,7 @@ returns setof public.albums as $$
       and s.status = 'accepted'
       and (
         s.shared_with_user_id = auth.uid()
-        or s.shared_with_email = (select email from auth.users where id = auth.uid())
+        or s.shared_with_email = public.current_user_email()
       )
   );
 $$ language sql security definer;
