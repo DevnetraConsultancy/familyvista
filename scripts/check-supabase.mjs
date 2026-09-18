@@ -60,10 +60,14 @@ async function main() {
     SUPABASE_URL.startsWith("https://") || SUPABASE_URL.includes("localhost"),
     SUPABASE_URL
   );
+  const keyIsJwt = SUPABASE_ANON_KEY.split(".").length === 3;
+  const keyIsPublishable = SUPABASE_ANON_KEY.startsWith("sb_publishable_");
   check(
-    "Anon key looks like a JWT",
-    SUPABASE_ANON_KEY.split(".").length === 3,
-    `${SUPABASE_ANON_KEY.length} chars`
+    "Anon key format valid",
+    keyIsJwt || keyIsPublishable,
+    keyIsPublishable
+      ? "new-style publishable key"
+      : `${SUPABASE_ANON_KEY.length} chars`
   );
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -71,14 +75,27 @@ async function main() {
   });
 
   // 2 — REST health
+  // Note: newer Supabase projects answer the bare /rest/v1/ root with 401
+  // even though the key is fine, so fall back to probing a real table.
   try {
-    const res = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/`, {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-    });
-    check("REST endpoint healthy", res.ok, `HTTP ${res.status}`);
+    const headers = {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    };
+    const res = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/`, { headers });
+    if (res.ok) {
+      check("REST endpoint healthy", true, `HTTP ${res.status}`);
+    } else {
+      const probe = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/albums?select=id&limit=1`,
+        { headers }
+      );
+      check(
+        "REST endpoint healthy",
+        probe.ok,
+        `root: HTTP ${res.status}; table probe: HTTP ${probe.status}`
+      );
+    }
   } catch (e) {
     check("REST endpoint healthy", false, e.message);
   }
@@ -123,26 +140,21 @@ async function main() {
   }
 
   // 5 — storage bucket
+  // Note: listBuckets() needs elevated privileges, so with the anon key we
+  // verify the bucket by listing objects in it (allowed by the public-read
+  // policy) and by forming a public URL.
   try {
-    const { data: buckets, error } = await supabase.storage.listBuckets();
-    const imagesBucket = buckets?.find((b) => b.id === "images" || b.name === "images");
-    if (error) {
-      check("Storage reachable", false, error.message);
-    } else if (!imagesBucket) {
-      check(
-        'Bucket "images" exists',
-        false,
-        "missing — run supabase/all-in-one.sql (section 9)"
-      );
-    } else {
-      check('Bucket "images" exists', true, imagesBucket.public ? "public ✓" : "private");
-      const { data: listing } = await supabase.storage.from("images").list("", { limit: 1 });
-      check(
-        'Bucket "images" publicly listable',
-        Array.isArray(listing),
-        Array.isArray(listing) ? "public-read policy active ✓" : "list failed (bucket may be private)"
-      );
-    }
+    const { data: listing, error: listErr } = await supabase.storage
+      .from("images")
+      .list("", { limit: 1 });
+    check(
+      'Bucket "images" exists + public read',
+      !listErr && Array.isArray(listing),
+      listErr
+        ? listErr.message
+        : `public-read policy active (${listing.length} root entr${listing.length === 1 ? "y" : "ies"})`
+    );
+
     const sample = supabase.storage.from("images").getPublicUrl("probe/test.jpg");
     check(
       "Public URL formation",
@@ -160,11 +172,13 @@ async function main() {
     });
     if (res.ok) {
       const settings = await res.json();
-      const google = settings?.external?.google?.enabled;
+      // The API has used both shapes: `google: true` and `google: { enabled: true }`.
+      const g = settings?.external?.google;
+      const enabled = g === true || g?.enabled === true;
       check(
         "Google sign-in provider",
-        google === true,
-        google === true ? "enabled ✓" : `disabled or unknown (${JSON.stringify(settings?.external?.google ?? null)})`
+        enabled,
+        enabled ? "enabled ✓" : `disabled or unknown (${JSON.stringify(g ?? null)})`
       );
     } else {
       check("Auth settings endpoint", false, `HTTP ${res.status}`);
