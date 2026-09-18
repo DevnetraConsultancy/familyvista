@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { ViewMode, BorderSettings } from "@/lib/types";
+import type { ViewMode, BorderSettings, SortKey } from "@/lib/types";
 
 interface UIState {
   sidebarOpen: boolean;
@@ -11,6 +11,11 @@ interface UIState {
 
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
+
+  sortBy: SortKey;
+  sortAsc: boolean;
+  setSortBy: (key: SortKey) => void;
+  setSortAsc: (asc: boolean) => void;
 
   borderSettings: BorderSettings;
   setBorderSettings: (s: Partial<BorderSettings>) => void;
@@ -33,6 +38,11 @@ export const useUIStore = create<UIState>()(
 
       viewMode: "large",
       setViewMode: (mode) => set({ viewMode: mode }),
+
+      sortBy: "custom",
+      sortAsc: true,
+      setSortBy: (key) => set({ sortBy: key }),
+      setSortAsc: (asc) => set({ sortAsc: asc }),
 
       borderSettings: {
         enabled: true,
@@ -67,6 +77,8 @@ export const useUIStore = create<UIState>()(
         sidebarOpen: state.sidebarOpen,
         viewMode: state.viewMode,
         borderSettings: state.borderSettings,
+        sortBy: state.sortBy,
+        sortAsc: state.sortAsc,
       }),
     }
   )

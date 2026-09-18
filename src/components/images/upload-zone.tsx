@@ -1,63 +1,62 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useRef } from "react";
 import { CloudUpload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { isImageFile, cn } from "@/lib/utils";
+import { useUploadStore } from "@/lib/upload-store";
 
 interface Props {
   albumId: string;
-  uploadFiles: (
-    files: File[],
-    groupId: string | null,
-    onProgress?: (done: number, total: number) => void
-  ) => Promise<boolean>;
 }
 
-export function UploadZone({ albumId, uploadFiles }: Props) {
-  const [dragOver, setDragOver] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
+export function UploadZone({ albumId }: Props) {
+  const dragOver = useRef(false);
+  const enqueue = useUploadStore((s) => s.enqueue);
+  const hasActiveInAlbum = useUploadStore((s) =>
+    s.items.some(
+      (i) =>
+        i.albumId === albumId &&
+        (i.status === "queued" ||
+          i.status === "uploading" ||
+          i.status === "processing")
+    )
+  );
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFiles = useCallback(
-    async (fileList: FileList | null) => {
-      if (!fileList) return;
-      const files = Array.from(fileList).filter(isImageFile);
-      if (files.length === 0) {
-        toast.error("No image files found");
-        return;
-      }
-      setUploading(true);
-      setProgress({ done: 0, total: files.length });
-      const ok = await uploadFiles(files, null, (done, total) =>
-        setProgress({ done, total })
-      );
-      setUploading(false);
-      if (ok) toast.success(`${files.length} photo(s) uploaded`);
-      else toast.error("Some uploads failed — check the list");
-    },
-    [uploadFiles]
-  );
+  const handleFiles = (fileList: FileList | null) => {
+    if (!fileList) return;
+    const accepted = Array.from(fileList).filter(isImageFile);
+    if (accepted.length === 0) {
+      toast.error("No image files found");
+      return;
+    }
+    const count = enqueue(albumId, accepted);
+    if (count > 0) {
+      toast.success(`${count} photo${count === 1 ? "" : "s"} queued for upload`);
+    } else {
+      toast.error("No image files found");
+    }
+  };
 
   return (
     <div
       data-album={albumId}
       onDragOver={(e) => {
         e.preventDefault();
-        setDragOver(true);
+        dragOver.current = true;
       }}
-      onDragLeave={() => setDragOver(false)}
+      onDragLeave={() => {
+        dragOver.current = false;
+      }}
       onDrop={(e) => {
         e.preventDefault();
-        setDragOver(false);
+        dragOver.current = false;
         handleFiles(e.dataTransfer.files);
       }}
       className={cn(
         "flex min-h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center transition-colors",
-        dragOver
-          ? "border-primary bg-primary/10"
-          : "border-border hover:border-primary/50 hover:bg-accent/40"
+        "border-border hover:border-primary/50 hover:bg-accent/40"
       )}
       onClick={() => inputRef.current?.click()}
     >
@@ -72,20 +71,14 @@ export function UploadZone({ albumId, uploadFiles }: Props) {
           e.target.value = "";
         }}
       />
-      {uploading ? (
+      {hasActiveInAlbum ? (
         <>
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm font-medium">
-            Uploading {progress.done} / {progress.total}…
+          <p className="text-sm font-medium">Uploading…</p>
+          <p className="text-xs text-muted-foreground">
+            Track progress in the upload tray — you can visit other albums
+            meanwhile.
           </p>
-          <div className="h-1.5 w-56 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-all"
-              style={{
-                width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%`,
-              }}
-            />
-          </div>
         </>
       ) : (
         <>

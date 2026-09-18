@@ -53,6 +53,9 @@ export interface Image {
 
 export type ViewMode = "small" | "large" | "list" | "play";
 
+/** How photos are ordered inside an album. "custom" = manual drag order. */
+export type SortKey = "custom" | "name" | "date" | "size" | "resolution";
+
 export interface BorderSettings {
   enabled: boolean;
   width: number; // px

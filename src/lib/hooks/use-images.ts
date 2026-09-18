@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { sanitizeFileName, stripExtension } from "@/lib/utils";
+import { useUploadStore } from "@/lib/upload-store";
+import { stripExtension } from "@/lib/utils";
 import type { Image, ImageGroup } from "@/lib/types";
-
-const BUCKET = "images";
 
 export function useImages(albumId: string | null) {
   const supabase = createClient();
@@ -44,84 +43,11 @@ export function useImages(albumId: string | null) {
     fetchAll();
   }, [fetchAll]);
 
-  // ---------- Upload ----------
-  const uploadFiles = useCallback(
-    async (
-      files: File[],
-      groupId: string | null,
-      onProgress?: (done: number, total: number) => void
-    ): Promise<boolean> => {
-      if (!albumId || files.length === 0) return false;
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return false;
-
-      let maxOrder = -1;
-      {
-        const { data } = await supabase
-          .from("images")
-          .select("sort_order")
-          .eq("album_id", albumId)
-          .order("sort_order", { ascending: false })
-          .limit(1);
-        maxOrder = data?.[0]?.sort_order ?? -1;
-      }
-
-      let done = 0;
-      let ok = true;
-
-      for (const file of files) {
-        if (!file.type.startsWith("image/")) {
-          done++;
-          continue;
-        }
-        const safe = sanitizeFileName(file.name);
-        const path = `${user.id}/${albumId}/${Date.now()}_${Math.random()
-          .toString(36)
-          .slice(2, 8)}_${safe}`;
-
-        const { error: upErr } = await supabase.storage
-          .from(BUCKET)
-          .upload(path, file, { cacheControl: "31536000", upsert: false });
-
-        if (upErr) {
-          console.error("Upload failed", file.name, upErr);
-          ok = false;
-        } else {
-          const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
-          const url = pub.publicUrl;
-
-          // get dimensions
-          const dims = await getImageDimensions(url).catch(() => null);
-
-          const { error: dbErr } = await supabase.from("images").insert({
-            album_id: albumId,
-            group_id: groupId,
-            user_id: user.id,
-            file_name: file.name,
-            original_url: url,
-            thumbnail_url: url,
-            width: dims?.width ?? null,
-            height: dims?.height ?? null,
-            file_size: file.size,
-            mime_type: file.type || null,
-            sort_order: ++maxOrder,
-          });
-          if (dbErr) {
-            console.error("DB insert failed", dbErr);
-            ok = false;
-          }
-        }
-        done++;
-        onProgress?.(done, files.length);
-      }
-
-      await fetchAll();
-      return ok;
-    },
-    [albumId, supabase, fetchAll]
-  );
+  // Refetch when an upload for this album finishes inserting a row.
+  const revision = useUploadStore((s) => (albumId ? s.revision[albumId] : undefined));
+  useEffect(() => {
+    if (revision !== undefined) fetchAll();
+  }, [revision, fetchAll]);
 
   // ---------- Reorder ----------
   const reorderImages = useCallback(
@@ -223,22 +149,10 @@ export function useImages(albumId: string | null) {
     groups,
     loading,
     refetch: fetchAll,
-    uploadFiles,
     reorderImages,
     setGroupOfImages,
     renameImage,
     duplicateImages,
     trashImages,
   };
-}
-
-function getImageDimensions(
-  url: string
-): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new window.Image();
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    img.onerror = reject;
-    img.src = url;
-  });
 }

@@ -18,6 +18,9 @@ import {
   Share2,
   UserPlus,
   Images,
+  ArrowUpDown,
+  ArrowDownAZ,
+  ArrowUpAZ,
 } from "lucide-react";
 import { useAlbums } from "@/lib/hooks/use-albums";
 import { useImages } from "@/lib/hooks/use-images";
@@ -69,6 +72,14 @@ const VIEW_MODES = [
   { mode: "play", icon: Play, label: "Slideshow" },
 ] as const;
 
+const SORT_OPTIONS = [
+  { key: "custom", label: "Custom (drag) order" },
+  { key: "name", label: "Name" },
+  { key: "date", label: "Date" },
+  { key: "size", label: "File size" },
+  { key: "resolution", label: "Resolution" },
+] as const;
+
 export default function AlbumPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -78,7 +89,6 @@ export default function AlbumPage() {
     images,
     groups,
     loading,
-    uploadFiles,
     reorderImages,
     renameImage,
     duplicateImages,
@@ -94,6 +104,10 @@ export default function AlbumPage() {
     toggleSelectionMode,
     selectedIds,
     clearSelection,
+    sortBy,
+    sortAsc,
+    setSortBy,
+    setSortAsc,
   } = useUIStore();
 
   const album = albums.find((a) => a.id === id);
@@ -116,15 +130,44 @@ export default function AlbumPage() {
   );
 
   const groupedImageList = useMemo(() => {
-    // group ordering: images with group in group order, then ungrouped
-    const groupOrder = new Map(groups.map((g, i) => [g.id, i]));
-    return [...images].sort((a, b) => {
-      const ga = a.group_id ? (groupOrder.get(a.group_id) ?? 999) : 999;
-      const gb = b.group_id ? (groupOrder.get(b.group_id) ?? 999) : 999;
-      if (ga !== gb) return ga - gb;
-      return a.sort_order - b.sort_order;
-    });
-  }, [images, groups]);
+    const list = [...images];
+
+    if (sortBy === "custom") {
+      // group ordering: images with group in group order, then ungrouped
+      const groupOrder = new Map(groups.map((g, i) => [g.id, i]));
+      return list.sort((a, b) => {
+        const ga = a.group_id ? (groupOrder.get(a.group_id) ?? 999) : 999;
+        const gb = b.group_id ? (groupOrder.get(b.group_id) ?? 999) : 999;
+        if (ga !== gb) return ga - gb;
+        return a.sort_order - b.sort_order;
+      });
+    }
+
+    const dir = sortAsc ? 1 : -1;
+    switch (sortBy) {
+      case "name":
+        return list.sort((a, b) =>
+          dir * a.file_name.localeCompare(b.file_name, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          })
+        );
+      case "date":
+        return list.sort(
+          (a, b) => dir * (Date.parse(a.created_at) - Date.parse(b.created_at))
+        );
+      case "size":
+        return list.sort(
+          (a, b) => dir * ((a.file_size ?? 0) - (b.file_size ?? 0))
+        );
+      case "resolution":
+        return list.sort(
+          (a, b) =>
+            dir *
+            ((a.width ?? 0) * (a.height ?? 0) - (b.width ?? 0) * (b.height ?? 0))
+        );
+    }
+  }, [images, groups, sortBy, sortAsc]);
 
   const handleRenameOpen = (img: Image | null) => {
     const target = img ?? images.find((i) => i.id === Array.from(selectedIds)[0]);
@@ -233,6 +276,53 @@ export default function AlbumPage() {
                 </button>
               ))}
             </div>
+
+            {/* Sort order */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  {sortAsc ? (
+                    <ArrowUpAZ className="h-3.5 w-3.5" />
+                  ) : (
+                    <ArrowDownAZ className="h-3.5 w-3.5" />
+                  )}
+                  Sort
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                {SORT_OPTIONS.map(({ key, label }) => (
+                  <DropdownMenuItem
+                    key={key}
+                    onClick={() => {
+                      if (sortBy === key) {
+                        // clicking the active key flips direction
+                        setSortAsc(!sortAsc);
+                      } else {
+                        setSortBy(key);
+                      }
+                    }}
+                  >
+                    {sortBy === key ? (
+                      sortAsc ? (
+                        <ArrowUpAZ />
+                      ) : (
+                        <ArrowDownAZ />
+                      )
+                    ) : (
+                      <ArrowUpDown className="opacity-30" />
+                    )}
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <p className="px-2 pb-1.5 pt-0 text-[10px] text-muted-foreground">
+                  {sortBy === "custom"
+                    ? "Drag photos to rearrange."
+                    : "Switch to Custom to drag photos."}
+                </p>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* Borders popover (view preference — works for shared viewers too) */}
             {!readOnly && (
@@ -361,7 +451,7 @@ export default function AlbumPage() {
               </p>
             </div>
           ) : (
-            <UploadZone albumId={id} uploadFiles={uploadFiles} />
+            <UploadZone albumId={id} />
           )
         ) : (
           <>
@@ -373,10 +463,11 @@ export default function AlbumPage() {
               onDuplicate={handleDuplicate}
               onMove={openMove}
               readOnly={readOnly}
+              dragEnabled={sortBy === "custom"}
             />
             {!readOnly && (
               <div className="mt-4">
-                <UploadZone albumId={id} uploadFiles={uploadFiles} />
+                <UploadZone albumId={id} />
               </div>
             )}
           </>

@@ -42,6 +42,8 @@ interface Props {
   onDuplicate: (ids: string[]) => void;
   onMove: (ids: string[]) => void;
   readOnly?: boolean;
+  /** False while a non-custom sort is active — drag would fight the sort. */
+  dragEnabled?: boolean;
 }
 
 export function ImageGrid({
@@ -52,6 +54,7 @@ export function ImageGrid({
   onDuplicate,
   onMove,
   readOnly = false,
+  dragEnabled = true,
 }: Props) {
   const { viewMode, borderSettings } = useUIStore();
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
@@ -73,6 +76,8 @@ export function ImageGrid({
   );
 
   const activeImage = images.find((i) => i.id === activeId) ?? null;
+
+  const canDrag = dragEnabled && !readOnly;
 
   const handleDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
 
@@ -118,6 +123,7 @@ export function ImageGrid({
                 image={img}
                 viewMode={viewMode}
                 readOnly={readOnly}
+                dragEnabled={canDrag}
                 onOpen={() => {
                   if (selectionMode && !readOnly) {
                     toggleSelected(img.id);
@@ -172,6 +178,7 @@ function SortableTile({
   image,
   viewMode,
   readOnly,
+  dragEnabled,
   onOpen,
   onRename,
   onTrash,
@@ -182,6 +189,7 @@ function SortableTile({
   image: Image;
   viewMode: string;
   readOnly: boolean;
+  dragEnabled: boolean;
   onOpen: () => void;
   onRename: () => void;
   onTrash: () => void;
@@ -213,7 +221,8 @@ function SortableTile({
       : { border: `${borderSettings.width}px solid ${borderSettings.color}` }
     : {};
 
-  const dragHandle = readOnly ? null : (
+  const dragHandle =
+    readOnly || !dragEnabled ? null : (
     <span
       {...attributes}
       {...listeners}

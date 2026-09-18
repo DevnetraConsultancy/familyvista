@@ -16,6 +16,7 @@ import {
 import { useUIStore } from "@/lib/store";
 import { useAuth } from "@/components/auth-provider";
 import { AlbumSidebar } from "@/components/layout/album-sidebar";
+import { UploadTray } from "@/components/images/upload-tray";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { HelpDialog } from "@/components/help-dialog";
 import { Button } from "@/components/ui/button";
@@ -200,6 +201,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           onClick={() => setMobileOpen(false)}
         />
       )}
+
+      {/* Global upload progress tray (survives album navigation) */}
+      <UploadTray />
     </div>
   );
 }
