@@ -3,7 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Folder, Images, MoreVertical, Pencil, Copy, Trash2 } from "lucide-react";
+import {
+  Plus,
+  Folder,
+  Images,
+  MoreVertical,
+  Pencil,
+  Copy,
+  Trash2,
+  Share2,
+} from "lucide-react";
 import { useAlbums, buildAlbumTree } from "@/lib/hooks/use-albums";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ShareDialog } from "@/components/share-dialog";
 import type { Album } from "@/lib/types";
 import { toast } from "sonner";
 
@@ -30,6 +40,7 @@ export default function DashboardPage() {
     useAlbums();
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [shareAlbum, setShareAlbum] = useState<Album | null>(null);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -97,10 +108,18 @@ export default function DashboardPage() {
                   const ok = await renameAlbum(album.id, name);
                   if (ok) toast.success("Renamed");
                 }}
+                onShare={() => setShareAlbum(album)}
               />
             ))}
         </div>
       )}
+
+      {/* Share dialog (shared by all album cards) */}
+      <ShareDialog
+        album={shareAlbum}
+        open={!!shareAlbum}
+        onOpenChange={(v) => !v && setShareAlbum(null)}
+      />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-sm">
@@ -137,12 +156,14 @@ function AlbumCard({
   onDuplicate,
   onDelete,
   onRename,
+  onShare,
 }: {
   album: Album;
   allAlbums: Album[];
   onDuplicate: () => void;
   onDelete: () => void;
   onRename: (name: string) => void;
+  onShare: () => void;
 }) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [name, setName] = useState(album.name);
@@ -181,6 +202,10 @@ function AlbumCard({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onShare}>
+            <Share2 />
+            Share
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setRenameOpen(true)}>
             <Pencil />
             Rename

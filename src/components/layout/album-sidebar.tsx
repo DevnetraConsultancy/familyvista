@@ -14,6 +14,7 @@ import {
   Images,
   Users,
   Eye,
+  Share2,
 } from "lucide-react";
 import { useAlbums, buildAlbumTree } from "@/lib/hooks/use-albums";
 import { useSharedAlbums } from "@/lib/hooks/use-shared-albums";
@@ -30,6 +31,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -52,6 +54,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import type { Album } from "@/lib/types";
+import { ShareDialog } from "@/components/share-dialog";
 import { toast } from "sonner";
 
 export function AlbumSidebar({ visible }: { visible: boolean }) {
@@ -70,6 +73,7 @@ export function AlbumSidebar({ visible }: { visible: boolean }) {
   const [renameValue, setRenameValue] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Album | null>(null);
   const [deletePhrase, setDeletePhrase] = useState("");
+  const [shareTarget, setShareTarget] = useState<Album | null>(null);
 
   const currentAlbumId = pathname.startsWith("/dashboard/album/")
     ? pathname.split("/")[3]
@@ -158,6 +162,7 @@ export function AlbumSidebar({ visible }: { visible: boolean }) {
                 setNewName("");
                 setCreateDialogOpen(true);
               }}
+              onShare={setShareTarget}
             />
           ))}
         </div>
@@ -262,6 +267,13 @@ export function AlbumSidebar({ visible }: { visible: boolean }) {
         </DialogContent>
       </Dialog>
 
+      {/* Share dialog */}
+      <ShareDialog
+        album={shareTarget}
+        open={!!shareTarget}
+        onOpenChange={(v) => !v && setShareTarget(null)}
+      />
+
       {/* Delete (phrase) dialog */}
       <AlertDialog
         open={!!deleteTarget}
@@ -340,6 +352,7 @@ function AlbumNode({
   onDuplicate,
   onDelete,
   onAddSub,
+  onShare,
 }: {
   album: Album;
   depth: number;
@@ -348,6 +361,7 @@ function AlbumNode({
   onDuplicate: (a: Album) => void;
   onDelete: (a: Album) => void;
   onAddSub: (a: Album) => void;
+  onShare: (a: Album) => void;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const hasChildren = (album.children?.length ?? 0) > 0;
@@ -355,6 +369,11 @@ function AlbumNode({
 
   const menuItems = (
     <>
+      <DropdownMenuItem onClick={() => onShare(album)}>
+        <Share2 />
+        Share
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
       <DropdownMenuItem onClick={() => onAddSub(album)}>
         <Plus />
         Add sub-album
@@ -439,6 +458,11 @@ function AlbumNode({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem onClick={() => onShare(album)}>
+            <Share2 />
+            Share
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onClick={() => onAddSub(album)}>
             <Plus />
             Add sub-album
@@ -474,6 +498,7 @@ function AlbumNode({
               onDuplicate={onDuplicate}
               onDelete={onDelete}
               onAddSub={onAddSub}
+              onShare={onShare}
             />
           ))}
         </div>
