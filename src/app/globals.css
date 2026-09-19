@@ -117,6 +117,16 @@
   outline-offset: -2px;
 }
 
+/* Slideshow countdown bar (image viewer) */
+@keyframes slideshow-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
 /* DnD drag ghost styling */
 .drag-overlay-tile {
   box-shadow: 0 20px 50px -12px rgb(0 0 0 / 0.45);

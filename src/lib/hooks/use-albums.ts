@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import type { Album } from "@/lib/types";
+import type { Album, Image } from "@/lib/types";
 
 export function useAlbums() {
   const supabase = createClient();
@@ -12,14 +12,56 @@ export function useAlbums() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchAlbums = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("albums")
-      .select("*")
-      .eq("is_deleted", false)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
+    const [{ data, error }, { data: imgs }] = await Promise.all([
+      supabase
+        .from("albums")
+        .select("*")
+        .eq("is_deleted", false)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("images")
+        .select("album_id, sort_order, thumbnail_url, original_url")
+        .eq("is_deleted", false),
+    ]);
     if (error) setError(error.message);
-    else setAlbums(data ?? []);
+    else {
+      // Derive per-album photo counts and a cover fallback (first photo).
+      // The DB has no counter column, and cover_image_url is never written,
+      // so without this every card would show "0 photos" and no thumbnail.
+      const stats = new Map<
+        string,
+        { count: number; cover: string | null; coverOrder: number }
+      >();
+      for (const img of (imgs ?? []) as Pick<
+        Image,
+        "album_id" | "sort_order" | "thumbnail_url" | "original_url"
+      >[]) {
+        const cur = stats.get(img.album_id);
+        const url = img.thumbnail_url ?? img.original_url;
+        if (!cur) {
+          stats.set(img.album_id, {
+            count: 1,
+            cover: url,
+            coverOrder: img.sort_order,
+          });
+        } else {
+          cur.count += 1;
+          if (url && (cur.cover === null || img.sort_order < cur.coverOrder)) {
+            cur.cover = url;
+            cur.coverOrder = img.sort_order;
+          }
+        }
+      }
+      setAlbums(
+        (data ?? []).map((a) => ({
+          ...a,
+          image_count: stats.get(a.id)?.count ?? 0,
+          cover_image_url:
+            a.cover_image_url ?? stats.get(a.id)?.cover ?? null,
+        }))
+      );
+    }
     setLoading(false);
   }, [supabase]);
 

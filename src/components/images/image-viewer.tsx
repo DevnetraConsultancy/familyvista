@@ -9,8 +9,20 @@ import {
   Play,
   Pause,
   Download,
+  Info,
+  Crop,
+  Timer,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useUIStore, SLIDESHOW_INTERVALS } from "@/lib/store";
 import type { Image } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -19,10 +31,24 @@ interface Props {
   index: number;
   onClose: () => void;
   onIndexChange: (i: number) => void;
+  /** Opens the photo-properties dialog for the current photo. */
+  onProperties?: (img: Image) => void;
+  /** Opens the crop dialog for the current photo (owner only). */
+  onCrop?: (img: Image) => void;
+  readOnly?: boolean;
 }
 
-export function ImageViewer({ images, index, onClose, onIndexChange }: Props) {
+export function ImageViewer({
+  images,
+  index,
+  onClose,
+  onIndexChange,
+  onProperties,
+  onCrop,
+  readOnly = false,
+}: Props) {
   const [playing, setPlaying] = useState(false);
+  const { slideshowInterval, setSlideshowInterval } = useUIStore();
   const current = images[index];
 
   const go = useCallback(
@@ -50,13 +76,17 @@ export function ImageViewer({ images, index, onClose, onIndexChange }: Props) {
     };
   }, [go, onClose]);
 
+  // Auto-advance every slideshowInterval seconds while playing.
   useEffect(() => {
     if (!playing) return;
-    const t = setInterval(() => go(1), 3000);
-    return () => clearInterval(t);
-  }, [playing, go]);
+    const t = setTimeout(() => go(1), slideshowInterval * 1000);
+    return () => clearTimeout(t);
+  }, [playing, go, slideshowInterval]);
 
   if (!current) return null;
+
+  const iconBtn =
+    "text-white hover:bg-white/10 aria-disabled:opacity-40 aria-disabled:pointer-events-none";
 
   return (
     <motion.div
@@ -72,19 +102,73 @@ export function ImageViewer({ images, index, onClose, onIndexChange }: Props) {
           {current.caption ? ` — ${current.caption}` : ""}
         </span>
         <div className="flex items-center gap-1">
+          {/* Slideshow timer: seconds per photo */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(iconBtn, "gap-1.5 px-2")}
+                aria-label="Slideshow timer"
+              >
+                <Timer className="h-4 w-4" />
+                {slideshowInterval}s
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-36">
+              <DropdownMenuLabel>Seconds per photo</DropdownMenuLabel>
+              {SLIDESHOW_INTERVALS.map((sec) => (
+                <DropdownMenuItem
+                  key={sec}
+                  onClick={() => setSlideshowInterval(sec)}
+                >
+                  <Check
+                    className={cn(
+                      "opacity-0",
+                      slideshowInterval === sec && "opacity-100"
+                    )}
+                  />
+                  {sec}s
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             variant="ghost"
             size="icon"
-            className="text-white hover:bg-white/10"
+            className={iconBtn}
             onClick={() => setPlaying((p) => !p)}
-            aria-label={playing ? "Pause" : "Play slideshow"}
+            aria-label={playing ? "Pause slideshow" : "Play slideshow"}
           >
             {playing ? <Pause /> : <Play />}
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="text-white hover:bg-white/10"
+            className={iconBtn}
+            onClick={() => onProperties?.(current)}
+            aria-disabled={!onProperties}
+            aria-label="Photo properties"
+          >
+            <Info />
+          </Button>
+          {!readOnly && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={iconBtn}
+              onClick={() => onCrop?.(current)}
+              aria-disabled={!onCrop}
+              aria-label="Crop photo"
+            >
+              <Crop />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className={iconBtn}
             asChild
           >
             <a href={current.original_url} download target="_blank" rel="noreferrer">
@@ -94,7 +178,7 @@ export function ImageViewer({ images, index, onClose, onIndexChange }: Props) {
           <Button
             variant="ghost"
             size="icon"
-            className="text-white hover:bg-white/10"
+            className={iconBtn}
             onClick={onClose}
             aria-label="Close"
           >
@@ -136,6 +220,21 @@ export function ImageViewer({ images, index, onClose, onIndexChange }: Props) {
               <ChevronRight className="h-6 w-6" />
             </button>
           </>
+        )}
+
+        {/* Slideshow countdown bar */}
+        {playing && (
+          <div
+            key={`${current.id}-${slideshowInterval}`}
+            className="absolute inset-x-6 bottom-3 h-1 overflow-hidden rounded-full bg-white/15"
+          >
+            <div
+              className="h-full rounded-full bg-primary"
+              style={{
+                animation: `slideshow-progress ${slideshowInterval}s linear forwards`,
+              }}
+            />
+          </div>
         )}
       </div>
 

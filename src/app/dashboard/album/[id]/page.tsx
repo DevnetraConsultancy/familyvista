@@ -29,6 +29,9 @@ import { useAuth } from "@/components/auth-provider";
 import { ShareDialog } from "@/components/share-dialog";
 import { UploadZone } from "@/components/images/upload-zone";
 import { ImageGrid } from "@/components/images/image-grid";
+import { PhotoPropertiesDialog } from "@/components/images/photo-properties-dialog";
+import { CropDialog } from "@/components/images/crop-dialog";
+import { useUploadStore } from "@/lib/upload-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -123,6 +126,11 @@ export default function AlbumPage() {
   const [deletePhrase, setDeletePhrase] = useState("");
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveTargetIds, setMoveTargetIds] = useState<string[]>([]);
+  const [propsImage, setPropsImage] = useState<Image | null>(null);
+  const [propsOpen, setPropsOpen] = useState(false);
+  const [cropImage, setCropImage] = useState<Image | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
+  const enqueueUploads = useUploadStore((s) => s.enqueue);
 
   const targetIds = useMemo(
     () => (menuImage ? [menuImage.id] : Array.from(selectedIds)),
@@ -211,6 +219,26 @@ export default function AlbumPage() {
     setMenuImage(null);
     setMoveTargetIds(ids);
     setMoveOpen(true);
+  };
+
+  const openProperties = (img: Image) => {
+    setMenuImage(null);
+    setPropsImage(img);
+    setPropsOpen(true);
+  };
+
+  const openCrop = (img: Image) => {
+    setMenuImage(null);
+    setCropImage(img);
+    setCropOpen(true);
+  };
+
+  /** Crop dialog hands us a finished JPEG; push it through the TUS upload queue. */
+  const handleCropApply = (blob: Blob, suggestedName: string) => {
+    if (!id) return;
+    const file = new File([blob], suggestedName, { type: "image/jpeg" });
+    const n = enqueueUploads(id, [file]);
+    if (n > 0) toast.success("Cropped photo added to upload queue");
   };
 
   if (!album && !loading) {
@@ -462,6 +490,8 @@ export default function AlbumPage() {
               onTrash={handleTrash}
               onDuplicate={handleDuplicate}
               onMove={openMove}
+              onProperties={openProperties}
+              onCrop={openCrop}
               readOnly={readOnly}
               dragEnabled={sortBy === "custom"}
             />
@@ -481,6 +511,27 @@ export default function AlbumPage() {
         album={album ?? null}
         open={shareOpen}
         onOpenChange={setShareOpen}
+      />
+
+      {/* Photo properties dialog */}
+      <PhotoPropertiesDialog
+        image={propsImage}
+        open={propsOpen}
+        onOpenChange={setPropsOpen}
+        position={
+          propsImage
+            ? groupedImageList.findIndex((i) => i.id === propsImage.id) + 1
+            : undefined
+        }
+        total={groupedImageList.length}
+      />
+
+      {/* Crop dialog — saves the crop as a new photo via the upload queue */}
+      <CropDialog
+        image={cropImage}
+        open={cropOpen}
+        onOpenChange={setCropOpen}
+        onApply={handleCropApply}
       />
 
       {/* Rename dialog */}

@@ -21,7 +21,15 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Pencil, Copy, Trash2, FolderInput } from "lucide-react";
+import {
+  GripVertical,
+  Pencil,
+  Copy,
+  Trash2,
+  FolderInput,
+  Info,
+  Crop,
+} from "lucide-react";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -41,6 +49,10 @@ interface Props {
   onTrash: (ids: string[]) => void;
   onDuplicate: (ids: string[]) => void;
   onMove: (ids: string[]) => void;
+  /** Open the photo-properties dialog. */
+  onProperties: (img: Image) => void;
+  /** Open the free-rect crop dialog (owners only). */
+  onCrop: (img: Image) => void;
   readOnly?: boolean;
   /** False while a non-custom sort is active — drag would fight the sort. */
   dragEnabled?: boolean;
@@ -53,6 +65,8 @@ export function ImageGrid({
   onTrash,
   onDuplicate,
   onMove,
+  onProperties,
+  onCrop,
   readOnly = false,
   dragEnabled = true,
 }: Props) {
@@ -135,6 +149,8 @@ export function ImageGrid({
                 onTrash={() => onTrash([img.id])}
                 onDuplicate={() => onDuplicate([img.id])}
                 onMove={() => onMove([img.id])}
+                onProperties={() => onProperties(img)}
+                onCrop={() => onCrop(img)}
                 onTrashSelected={() => {
                   const ids = Array.from(selectedIds);
                   onTrash(ids.length > 0 ? ids : [img.id]);
@@ -167,6 +183,9 @@ export function ImageGrid({
             setViewerIndex(null);
           }}
           onIndexChange={setViewerIndex}
+          onProperties={onProperties}
+          onCrop={onCrop}
+          readOnly={readOnly}
         />
       )}
     </>
@@ -184,6 +203,8 @@ function SortableTile({
   onTrash,
   onDuplicate,
   onMove,
+  onProperties,
+  onCrop,
   onTrashSelected,
 }: {
   image: Image;
@@ -195,6 +216,8 @@ function SortableTile({
   onTrash: () => void;
   onDuplicate: () => void;
   onMove: () => void;
+  onProperties: () => void;
+  onCrop: () => void;
   onTrashSelected: () => void;
 }) {
   const {
@@ -239,12 +262,24 @@ function SortableTile({
         <Pencil />
         View
       </ContextMenuItem>
+      <ContextMenuItem onClick={onProperties}>
+        <Info />
+        Properties
+      </ContextMenuItem>
     </ContextMenuContent>
   ) : (
     <ContextMenuContent>
       <ContextMenuItem onClick={onOpen}>
         <Pencil />
         {viewMode === "list" ? "Open" : "View"}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onProperties}>
+        <Info />
+        Properties
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onCrop}>
+        <Crop />
+        Crop…
       </ContextMenuItem>
       <ContextMenuItem onClick={onRename}>
         <Pencil />

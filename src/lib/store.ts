@@ -4,6 +4,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ViewMode, BorderSettings, SortKey } from "@/lib/types";
 
+/** Seconds each photo stays on screen in the slideshow. */
+export const SLIDESHOW_INTERVALS = [1, 2, 3, 5, 10, 15] as const;
+
 interface UIState {
   sidebarOpen: boolean;
   toggleSidebar: () => void;
@@ -19,6 +22,10 @@ interface UIState {
 
   borderSettings: BorderSettings;
   setBorderSettings: (s: Partial<BorderSettings>) => void;
+
+  /** Slideshow seconds-per-photo (see SLIDESHOW_INTERVALS). */
+  slideshowInterval: number;
+  setSlideshowInterval: (sec: number) => void;
 
   // selection
   selectionMode: boolean;
@@ -53,6 +60,9 @@ export const useUIStore = create<UIState>()(
       setBorderSettings: (s) =>
         set({ borderSettings: { ...get().borderSettings, ...s } }),
 
+      slideshowInterval: 3,
+      setSlideshowInterval: (sec) => set({ slideshowInterval: sec }),
+
       selectionMode: false,
       toggleSelectionMode: () =>
         set({
@@ -79,6 +89,7 @@ export const useUIStore = create<UIState>()(
         borderSettings: state.borderSettings,
         sortBy: state.sortBy,
         sortAsc: state.sortAsc,
+        slideshowInterval: state.slideshowInterval,
       }),
     }
   )
