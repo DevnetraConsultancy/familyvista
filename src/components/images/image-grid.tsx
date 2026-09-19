@@ -28,7 +28,6 @@ import {
   Trash2,
   FolderInput,
   Info,
-  Crop,
 } from "lucide-react";
 import {
   ContextMenu,
@@ -51,8 +50,6 @@ interface Props {
   onMove: (ids: string[]) => void;
   /** Open the photo-properties dialog. */
   onProperties: (img: Image) => void;
-  /** Open the free-rect crop dialog (owners only). */
-  onCrop: (img: Image) => void;
   readOnly?: boolean;
   /** False while a non-custom sort is active — drag would fight the sort. */
   dragEnabled?: boolean;
@@ -66,7 +63,6 @@ export function ImageGrid({
   onDuplicate,
   onMove,
   onProperties,
-  onCrop,
   readOnly = false,
   dragEnabled = true,
 }: Props) {
@@ -150,7 +146,6 @@ export function ImageGrid({
                 onDuplicate={() => onDuplicate([img.id])}
                 onMove={() => onMove([img.id])}
                 onProperties={() => onProperties(img)}
-                onCrop={() => onCrop(img)}
                 onTrashSelected={() => {
                   const ids = Array.from(selectedIds);
                   onTrash(ids.length > 0 ? ids : [img.id]);
@@ -184,7 +179,6 @@ export function ImageGrid({
           }}
           onIndexChange={setViewerIndex}
           onProperties={onProperties}
-          onCrop={onCrop}
           readOnly={readOnly}
         />
       )}
@@ -204,7 +198,6 @@ function SortableTile({
   onDuplicate,
   onMove,
   onProperties,
-  onCrop,
   onTrashSelected,
 }: {
   image: Image;
@@ -217,7 +210,6 @@ function SortableTile({
   onDuplicate: () => void;
   onMove: () => void;
   onProperties: () => void;
-  onCrop: () => void;
   onTrashSelected: () => void;
 }) {
   const {
@@ -276,10 +268,6 @@ function SortableTile({
       <ContextMenuItem onClick={onProperties}>
         <Info />
         Properties
-      </ContextMenuItem>
-      <ContextMenuItem onClick={onCrop}>
-        <Crop />
-        Crop…
       </ContextMenuItem>
       <ContextMenuItem onClick={onRename}>
         <Pencil />

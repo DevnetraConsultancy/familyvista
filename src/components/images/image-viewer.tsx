@@ -10,7 +10,6 @@ import {
   Pause,
   Download,
   Info,
-  Crop,
   Timer,
   Check,
 } from "lucide-react";
@@ -33,8 +32,6 @@ interface Props {
   onIndexChange: (i: number) => void;
   /** Opens the photo-properties dialog for the current photo. */
   onProperties?: (img: Image) => void;
-  /** Opens the crop dialog for the current photo (owner only). */
-  onCrop?: (img: Image) => void;
   readOnly?: boolean;
 }
 
@@ -44,7 +41,6 @@ export function ImageViewer({
   onClose,
   onIndexChange,
   onProperties,
-  onCrop,
   readOnly = false,
 }: Props) {
   const [playing, setPlaying] = useState(false);
@@ -153,18 +149,6 @@ export function ImageViewer({
           >
             <Info />
           </Button>
-          {!readOnly && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className={iconBtn}
-              onClick={() => onCrop?.(current)}
-              aria-disabled={!onCrop}
-              aria-label="Crop photo"
-            >
-              <Crop />
-            </Button>
-          )}
           <Button
             variant="ghost"
             size="icon"
