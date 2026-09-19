@@ -3,18 +3,28 @@
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import { uploadFileWithProgress, buildObjectPath } from "@/lib/supabase/tus-upload";
+import { optimizeForUpload } from "@/lib/image-optimize";
 import { isImageFile } from "@/lib/utils";
 
 const BUCKET = "images";
 const MAX_CONCURRENT = 3;
 
-export type UploadStatus = "queued" | "uploading" | "processing" | "done" | "error";
+export type UploadStatus =
+  | "queued"
+  | "optimizing"
+  | "uploading"
+  | "processing"
+  | "done"
+  | "error";
 
 export interface UploadItem {
   id: string;
   albumId: string;
   fileName: string;
+  /** Bytes actually stored in Supabase (post-optimization). */
   size: number;
+  /** Original file size before optimization — for the savings badge. */
+  originalSize: number;
   /** Bytes confirmed sent to Supabase (TUS onProgress). */
   bytesUploaded: number;
   status: UploadStatus;
@@ -22,6 +32,8 @@ export interface UploadItem {
   controller?: AbortController;
   /** Original File handle so failed uploads can be retried. */
   file: () => File;
+  /** Optimized blob when optimization won; undefined = upload the original. */
+  optimizedBlob?: Blob;
   startedAt: number;
 }
 
@@ -47,8 +59,12 @@ export const useUploadStore = create<UploadState>((set, get) => {
   /** Free worker slots and start the next queued upload. */
   const pump = () => {
     const { items } = get();
-    const active = items.filter((i) => i.status === "uploading" || i.status === "processing")
-      .length;
+    const active = items.filter(
+      (i) =>
+        i.status === "uploading" ||
+        i.status === "optimizing" ||
+        i.status === "processing"
+    ).length;
     let slots = MAX_CONCURRENT - active;
     if (slots <= 0) return;
 
@@ -87,9 +103,24 @@ export const useUploadStore = create<UploadState>((set, get) => {
       if (!session || !user) throw new Error("Not signed in");
       const accessToken = session.access_token;
 
+      // Compress before upload: mozjpeg q90 for JPEG, lossless oxipng for PNG.
+      // Smaller-wins + fall-back-to-original are guaranteed inside the helper.
+      patch(id, { status: "optimizing" });
+      const { blob, optimized } = await optimizeForUpload(item.file());
+      const finalFile =
+        blob === item.file()
+          ? item.file()
+          : new File([blob], item.fileName, {
+              type: blob.type || "application/octet-stream",
+            });
+      patch(id, {
+        optimizedBlob: optimized ? finalFile : undefined,
+        size: finalFile.size,
+      });
+
       const path = buildObjectPath(user.id, item.albumId, item.fileName);
 
-      await uploadFileWithProgress(item.file(), path, {
+      await uploadFileWithProgress(finalFile, path, {
         accessToken,
         onProgress: (bytes) => patch(id, { bytesUploaded: bytes }),
         signal: controller.signal,
@@ -116,7 +147,7 @@ export const useUploadStore = create<UploadState>((set, get) => {
       });
       if (dbErr) throw new Error(dbErr.message);
 
-      patch(id, { status: "done", bytesUploaded: item.size });
+      patch(id, { status: "done", bytesUploaded: finalFile.size });
       set((s) => ({
         revision: {
           ...s.revision,
@@ -130,7 +161,7 @@ export const useUploadStore = create<UploadState>((set, get) => {
         error: aborted ? undefined : describeError(err),
       });
     } finally {
-      patch(id, { controller: undefined });
+      patch(id, { controller: undefined, optimizedBlob: undefined });
       // kick the next queued item
       setTimeout(() => pump(), 0);
     }
@@ -148,6 +179,7 @@ export const useUploadStore = create<UploadState>((set, get) => {
         albumId,
         fileName: file.name,
         size: file.size,
+        originalSize: file.size,
         bytesUploaded: 0,
         status: "queued" as const,
         file: () => file,
@@ -160,7 +192,13 @@ export const useUploadStore = create<UploadState>((set, get) => {
     },
 
     retry: (id) => {
-      patch(id, { status: "queued", error: undefined, bytesUploaded: 0 });
+      const item = get().items.find((i) => i.id === id);
+      patch(id, {
+        status: "queued",
+        error: undefined,
+        bytesUploaded: 0,
+        size: item?.originalSize ?? item?.size,
+      });
       pump();
     },
 

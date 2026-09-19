@@ -29,7 +29,10 @@ export function UploadTray() {
   if (items.length === 0) return null;
 
   const uploading = items.filter(
-    (i) => i.status === "uploading" || i.status === "processing"
+    (i) =>
+      i.status === "uploading" ||
+      i.status === "optimizing" ||
+      i.status === "processing"
   );
   const done = items.filter((i) => i.status === "done").length;
   const failed = items.filter((i) => i.status === "error").length;
@@ -38,6 +41,9 @@ export function UploadTray() {
     (acc, i) => acc + (i.status === "done" ? i.size : i.bytesUploaded),
     0
   );
+  const savedBytes = items
+    .filter((i) => i.status === "done" && i.originalSize > i.size)
+    .reduce((acc, i) => acc + (i.originalSize - i.size), 0);
   const overallPct =
     totalBytes > 0 ? Math.round((sentBytes / totalBytes) * 100) : 0;
   const active = uploading.length > 0;
@@ -101,6 +107,8 @@ export function UploadTray() {
               {active
                 ? `${overallPct}% · ${formatBytes(sentBytes)} / ${formatBytes(totalBytes)}`
                 : `${formatBytes(totalBytes)} total`}
+              {savedBytes > 0 &&
+                ` · saved ${formatBytes(savedBytes)} by compression`}
             </span>
           </span>
           {expanded ? (
@@ -127,6 +135,9 @@ export function UploadTray() {
                       {item.status === "uploading" && (
                         <CloudUpload className="h-4 w-4 text-primary" />
                       )}
+                      {item.status === "optimizing" && (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      )}
                       {item.status === "processing" && (
                         <Loader2 className="h-4 w-4 animate-spin text-primary" />
                       )}
@@ -146,13 +157,19 @@ export function UploadTray() {
                     <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                       {item.status === "uploading"
                         ? `${pct}%`
-                        : item.status === "processing"
-                          ? "Saving…"
-                          : item.status === "done"
-                            ? formatBytes(item.size)
-                            : item.status === "error"
-                              ? ""
-                              : "Waiting…"}
+                        : item.status === "optimizing"
+                          ? "Optimizing…"
+                          : item.status === "processing"
+                            ? "Saving…"
+                            : item.status === "done"
+                              ? item.size < item.originalSize
+                                ? `${formatBytes(item.originalSize)} → ${formatBytes(item.size)} · −${Math.round(
+                                    (1 - item.size / item.originalSize) * 100
+                                  )}%`
+                                : formatBytes(item.size)
+                              : item.status === "error"
+                                ? ""
+                                : "Waiting…"}
                     </span>
                     {/* row actions */}
                     <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100">
@@ -166,7 +183,8 @@ export function UploadTray() {
                         </button>
                       )}
                       {(item.status === "uploading" ||
-                        item.status === "queued") && (
+                        item.status === "queued" ||
+                        item.status === "optimizing") && (
                         <button
                           title="Cancel"
                           className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -215,7 +233,11 @@ export function UploadTray() {
         {expanded && allSettled && (
           <div className="flex items-center justify-between border-t p-2">
             <span className="text-[10px] text-muted-foreground">
-              {failed > 0 ? "Some items need attention" : "All uploads finished"}
+              {failed > 0
+                ? "Some items need attention"
+                : savedBytes > 0
+                  ? `Compression saved ${formatBytes(savedBytes)}`
+                  : "All uploads finished"}
             </span>
             <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={clearFinished}>
               Clear list
