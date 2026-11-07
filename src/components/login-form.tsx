@@ -32,6 +32,7 @@ export function LoginForm() {
       </div>
 
       <div className="glass-strong relative z-10 w-full max-w-md rounded-2xl p-7 sm:p-8">
+        <LogoMark className="mb-5 h-20 w-20" rounded="rounded-full" />
         <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-text">
           Welcome back
         </p>

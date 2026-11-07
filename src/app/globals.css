@@ -370,3 +370,9 @@
     animation: none !important;
   }
 }
+
+/* Dialog centring lives in `transform` (not Tailwind's `translate` property)
+   so the pop keyframes above compose with it instead of doubling it. */
+.fv-dialog {
+  transform: translate(-50%, -50%);
+}

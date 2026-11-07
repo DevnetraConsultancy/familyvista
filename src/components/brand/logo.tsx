@@ -1,21 +1,48 @@
 import { cn } from "@/lib/utils";
 
-/** Gold-framed photo mark — the FamilyVista brand icon. */
-export function LogoMark({ className }: { className?: string }) {
+/**
+ * FamilyVista brand mark: the gold family-in-a-heart artwork on black.
+ * Rendered inside a black rounded badge so it reads the same on the cream
+ * light theme as on the pure-black dark theme.
+ */
+export function LogoMark({
+  className,
+  rounded = "rounded-[22%]",
+}: {
+  className?: string;
+  /** Tailwind radius class for the badge (default a soft squircle). */
+  rounded?: string;
+}) {
   return (
     <span
       aria-hidden
       className={cn(
-        "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-[#00000033] [background:var(--gold-grad)] shadow-[inset_0_1px_0_#ffffff80,0_2px_6px_-2px_#00000080]",
+        "relative inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden bg-black ring-1 ring-[color-mix(in_oklab,var(--gold)_45%,transparent)] shadow-[0_2px_8px_-2px_rgba(233,189,80,0.45)]",
+        rounded,
         className
       )}
     >
-      <svg viewBox="0 0 24 24" className="h-[58%] w-[58%]" fill="none">
-        <rect x="3" y="4" width="18" height="16" rx="2.5" stroke="#1c1302" strokeWidth="1.8" />
-        <circle cx="9" cy="9.5" r="1.6" fill="#1c1302" />
-        <path d="M3.5 17.5l5-5 3.5 3.5 3-3 5.5 5.5" stroke="#1c1302" strokeWidth="1.8" strokeLinejoin="round" />
-      </svg>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/brand/logo-mark.webp"
+        alt=""
+        draggable={false}
+        className="h-full w-full select-none object-cover"
+      />
     </span>
+  );
+}
+
+/** Large standalone artwork (no badge), for hero/empty-state placements. */
+export function LogoArt({ className }: { className?: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/brand/logo.webp"
+      alt="FamilyVista"
+      draggable={false}
+      className={cn("select-none rounded-full bg-black object-cover", className)}
+    />
   );
 }
 

@@ -27,6 +27,12 @@ export const metadata: Metadata = {
   },
   description:
     "Create family albums, upload photos in bulk, drag to reorder, share with family, and relive your memories in a full-screen slideshow.",
+  openGraph: {
+    title: "FamilyVista",
+    description: "Your family albums, beautifully organized.",
+    images: [{ url: "/brand/logo-1200.png", width: 1200, height: 1200 }],
+  },
+  twitter: { card: "summary", images: ["/brand/logo-1200.png"] },
 };
 
 export const viewport: Viewport = {

@@ -104,7 +104,7 @@ export function HelpDialog({
       <DialogContent className="max-w-md gap-0 p-6 sm:p-7">
         {/* Brand header */}
         <div className="flex flex-col items-center text-center">
-          <LogoMark className="mb-3 h-11 w-11 rounded-xl" />
+          <LogoMark className="mb-3 h-16 w-16" rounded="rounded-full" />
           <DialogTitle className="font-display text-[1.75rem] font-semibold">
             Family<span className="text-gold-grad">Vista</span>
           </DialogTitle>
