@@ -3,22 +3,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useUploadStore } from "@/lib/upload-store";
-import { stripExtension } from "@/lib/utils";
+import { useAlbumStore } from "@/lib/hooks/use-albums";
+import { stripExtension, getFileExtension } from "@/lib/utils";
 import type { Image, ImageGroup } from "@/lib/types";
 
 export function useImages(albumId: string | null) {
   const supabase = createClient();
   const [images, setImages] = useState<Image[]>([]);
   const [groups, setGroups] = useState<ImageGroup[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const loading = !!albumId && loadedFor !== albumId;
+  const refreshAlbums = useAlbumStore((s) => s.fetchAlbums);
 
-  const fetchAll = useCallback(async () => {
-    if (!albumId) {
-      setImages([]);
-      setGroups([]);
-      return;
-    }
-    setLoading(true);
+  /** Pure loader: no state updates, so effects can await it safely. */
+  const load = useCallback(async () => {
+    if (!albumId) return null;
     const [imgRes, grpRes] = await Promise.all([
       supabase
         .from("images")
@@ -34,49 +33,71 @@ export function useImages(albumId: string | null) {
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
     ]);
-    if (imgRes.data) setImages(imgRes.data);
-    if (grpRes.data) setGroups(grpRes.data);
-    setLoading(false);
+    return {
+      albumId,
+      images: (imgRes.data ?? []) as Image[],
+      groups: (grpRes.data ?? []) as ImageGroup[],
+    };
   }, [albumId, supabase]);
 
-  useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+  type Loaded = NonNullable<Awaited<ReturnType<typeof load>>>;
+  const apply = useCallback((r: Loaded | null) => {
+    if (!r) return;
+    setImages(r.images);
+    setGroups(r.groups);
+    setLoadedFor(r.albumId);
+  }, []);
 
-  // Refetch when an upload for this album finishes inserting a row.
+  const fetchAll = useCallback(async () => {
+    apply(await load());
+  }, [load, apply]);
+
+  // Initial load + reload when the album changes. Re-fetch when an upload
+  // for this album finishes inserting a row (revision bump).
   const revision = useUploadStore((s) => (albumId ? s.revision[albumId] : undefined));
   useEffect(() => {
-    if (revision !== undefined) fetchAll();
-  }, [revision, fetchAll]);
+    let active = true;
+    load().then((r) => {
+      if (!active) return;
+      apply(r);
+      if (revision !== undefined) refreshAlbums();
+    });
+    return () => {
+      active = false;
+    };
+  }, [load, apply, revision, refreshAlbums]);
 
   // ---------- Reorder ----------
   const reorderImages = useCallback(
     async (orderedIds: string[]) => {
-      // optimistic
       setImages((prev) => {
         const map = new Map(prev.map((i) => [i.id, i]));
-        const next = orderedIds
-          .map((id) => map.get(id))
-          .filter(Boolean) as Image[];
-        // append images not in orderedIds (other groups)
+        const next = orderedIds.map((id) => map.get(id)).filter(Boolean) as Image[];
         const rest = prev.filter((i) => !orderedIds.includes(i.id));
-        return [...next, ...rest];
+        return [...next, ...rest].map((img, idx) => ({ ...img, sort_order: idx }));
       });
-      const updates = orderedIds.map((id, idx) => ({ id, sort_order: idx }));
-      const { error } = await supabase.from("images").upsert(updates, {
-        onConflict: "id",
-      });
-      if (error) console.error("Reorder failed", error);
+      // Only the columns that change — `upsert` with partial rows would trip
+      // NOT NULL constraints on insert paths, so update row-by-row in parallel.
+      const results = await Promise.all(
+        orderedIds.map((id, idx) =>
+          supabase.from("images").update({ sort_order: idx }).eq("id", id)
+        )
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) {
+        console.error("Reorder failed", failed.error);
+        await fetchAll();
+      } else {
+        refreshAlbums(); // cover photo may have changed
+      }
     },
-    [supabase]
+    [supabase, fetchAll, refreshAlbums]
   );
 
   const setGroupOfImages = useCallback(
     async (ids: string[], groupId: string | null) => {
       setImages((prev) =>
-        prev.map((img) =>
-          ids.includes(img.id) ? { ...img, group_id: groupId } : img
-        )
+        prev.map((img) => (ids.includes(img.id) ? { ...img, group_id: groupId } : img))
       );
       const { error } = await supabase
         .from("images")
@@ -89,12 +110,10 @@ export function useImages(albumId: string | null) {
 
   // ---------- Rename / caption ----------
   const renameImage = useCallback(
-    async (id: string, fileName: string, caption?: string) => {
-      const updates: Partial<Image> = { file_name: fileName };
-      if (caption !== undefined) updates.caption = caption;
+    async (id: string, fileName: string, caption: string) => {
       const { error } = await supabase
         .from("images")
-        .update(updates)
+        .update({ file_name: fileName, caption })
         .eq("id", id);
       if (!error) await fetchAll();
       return !error;
@@ -106,15 +125,13 @@ export function useImages(albumId: string | null) {
   const duplicateImages = useCallback(
     async (ids: string[]) => {
       const toCopy = images.filter((i) => ids.includes(i.id));
-      if (toCopy.length === 0) return;
+      if (toCopy.length === 0) return false;
       const maxOrder = Math.max(-1, ...images.map((i) => i.sort_order));
       const inserts = toCopy.map((img, idx) => ({
         album_id: img.album_id,
         group_id: img.group_id,
         user_id: img.user_id,
-        file_name: `${stripExtension(img.file_name)} (copy)${img.file_name.slice(
-          img.file_name.lastIndexOf(".")
-        )}`,
+        file_name: `${stripExtension(img.file_name)} (copy)${getFileExtension(img.file_name)}`,
         original_url: img.original_url,
         thumbnail_url: img.thumbnail_url,
         width: img.width,
@@ -125,9 +142,41 @@ export function useImages(albumId: string | null) {
         sort_order: maxOrder + 1 + idx,
       }));
       const { error } = await supabase.from("images").insert(inserts);
-      if (!error) await fetchAll();
+      if (!error) {
+        await fetchAll();
+        refreshAlbums();
+      }
+      return !error;
     },
-    [images, supabase, fetchAll]
+    [images, supabase, fetchAll, refreshAlbums]
+  );
+
+  // ---------- Move to another album ----------
+  const moveImages = useCallback(
+    async (ids: string[], targetAlbumId: string) => {
+      const { data: maxRow } = await supabase
+        .from("images")
+        .select("sort_order")
+        .eq("album_id", targetAlbumId)
+        .order("sort_order", { ascending: false })
+        .limit(1);
+      const base = (maxRow?.[0]?.sort_order ?? -1) + 1;
+      const results = await Promise.all(
+        ids.map((id, idx) =>
+          supabase
+            .from("images")
+            .update({ album_id: targetAlbumId, group_id: null, sort_order: base + idx })
+            .eq("id", id)
+        )
+      );
+      const error = results.find((r) => r.error)?.error;
+      if (!error) {
+        await fetchAll();
+        refreshAlbums();
+      }
+      return !error;
+    },
+    [supabase, fetchAll, refreshAlbums]
   );
 
   // ---------- Trash (soft delete) ----------
@@ -138,10 +187,13 @@ export function useImages(albumId: string | null) {
         .from("images")
         .update({ is_deleted: true, deleted_at: now })
         .in("id", ids);
-      if (!error) await fetchAll();
+      if (!error) {
+        await fetchAll();
+        refreshAlbums();
+      }
       return !error;
     },
-    [supabase, fetchAll]
+    [supabase, fetchAll, refreshAlbums]
   );
 
   return {
@@ -153,6 +205,7 @@ export function useImages(albumId: string | null) {
     setGroupOfImages,
     renameImage,
     duplicateImages,
+    moveImages,
     trashImages,
   };
 }

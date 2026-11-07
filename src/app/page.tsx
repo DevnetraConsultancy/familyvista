@@ -1,138 +1,176 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { HelpDialog } from "@/components/help-dialog";
 import { GoogleSignInButton } from "@/components/google-signin-button";
+import { LogoMark, Wordmark } from "@/components/brand/logo";
 import {
   Images,
   FolderTree,
   GripVertical,
   Layers,
-  Sparkles,
   Trash2,
-  Sun,
-  Heart,
+  Users,
+  Check,
+  Mail,
 } from "lucide-react";
 
 const features = [
   {
     icon: FolderTree,
-    title: "Albums & Sub-Albums",
+    title: "Albums and sub-albums",
     desc: "Organize memories into nested albums that make sense for your family.",
   },
   {
     icon: Images,
-    title: "Bulk Upload",
-    desc: "Drop in hundreds of photos at once. Direct-to-storage, blazing fast.",
+    title: "Bulk upload",
+    desc: "Drop in hundreds of photos at once. Compressed on-device, sent straight to storage.",
   },
   {
     icon: GripVertical,
-    title: "Drag & Drop Ordering",
-    desc: "Rearrange photos exactly how you want with buttery-smooth dragging.",
+    title: "Drag and drop ordering",
+    desc: "Rearrange photos exactly how you want, then sort by name, date or size when you need to.",
   },
   {
     icon: Layers,
-    title: "Groups & Views",
-    desc: "Group photos by event or year. Small, large, list, and slideshow views.",
+    title: "Four ways to look",
+    desc: "Small tiles, large tiles, a list, or a full-screen slideshow with a timer.",
   },
   {
-    icon: Sun,
-    title: "Photo Borders",
-    desc: "Add elegant white borders inside or outside each photo, your call.",
+    icon: Users,
+    title: "Share with family",
+    desc: "Invite relatives by email. They see the album in their own account, view-only.",
   },
   {
     icon: Trash2,
-    title: "Safe Trash",
-    desc: "Nothing disappears by accident. Restore anytime — permanent delete needs a phrase.",
+    title: "Safe trash",
+    desc: "Nothing disappears by accident. Restore anytime. Permanent delete needs a typed phrase.",
   },
 ];
 
+const proofs = [
+  "Nested albums, drag ordering, four view modes",
+  "Photos compressed before upload, never visibly worse",
+  "Share view-only with family, restore anything from trash",
+];
+
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+    </svg>
+  );
+}
+
 export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (user) redirect("/dashboard");
+  let signedIn = false;
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    signedIn = !!user;
+  } catch {
+    signedIn = false;
+  }
+  if (signedIn) redirect("/dashboard");
 
   return (
-    <div className="min-h-screen">
+    <div className="flex min-h-screen flex-col">
       {/* Nav */}
-      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/70 backdrop-blur-lg">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <div className="flex items-center gap-2 font-bold text-lg tracking-tight">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Images className="h-4 w-4" />
-            </div>
-            FamilyVista
+      <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-background/70 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-5 sm:px-8">
+          <div className="flex items-center gap-2.5">
+            <LogoMark />
+            <Wordmark />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <HelpDialog trigger="labeled" />
             <ThemeToggle />
           </div>
         </div>
       </header>
 
-      {/* Hero with centered Google sign-in */}
-      <section className="hero-gradient relative overflow-hidden">
-        <div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 pb-24 pt-24 text-center">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm text-primary">
-            <Sparkles className="h-3.5 w-3.5" />
-            Your memories deserve a beautiful home
-          </div>
-          <h1 className="max-w-3xl text-5xl font-extrabold tracking-tight sm:text-6xl">
-            Family albums,
-            <br />
-            <span className="bg-gradient-to-r from-primary via-primary/80 to-accent-foreground bg-clip-text text-transparent">
-              beautifully organized
-            </span>
-          </h1>
-          <p className="mt-6 max-w-xl text-lg text-muted-foreground">
-            Create albums, upload photos in bulk, drag to reorder, group by
-            occasion, and relive everything in a gorgeous full-screen slideshow.
-          </p>
-
-          {/* Premium centered sign-in */}
-          <div className="mt-10 flex w-full flex-col items-center">
-            <GoogleSignInButton redirectTo="/dashboard" />
-            <p className="mt-3 text-xs text-muted-foreground">
-              Free forever · Takes less than a minute
+      {/* Hero */}
+      <section className="ambient-gold relative">
+        <div className="mx-auto grid w-full max-w-6xl gap-12 px-5 pb-20 pt-16 sm:px-8 lg:grid-cols-[1.15fr_1fr] lg:items-center lg:gap-16 lg:pb-28 lg:pt-24">
+          <div className="max-w-xl">
+            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-text">
+              Family photo albums
             </p>
+            <h1 className="font-display text-[2.75rem] font-semibold leading-[1.05] sm:text-[3.5rem] lg:text-[4rem]">
+              Every memory,{" "}
+              <em className="text-gold-grad">kept.</em>
+            </h1>
+            <p className="mt-6 text-base leading-relaxed text-muted-foreground sm:text-lg">
+              Create albums, upload photos in bulk, drag them into order, share
+              with the people who were there, and relive it all in a full-screen
+              slideshow.
+            </p>
+            <ul className="mt-8 space-y-3">
+              {proofs.map((p) => (
+                <li key={p} className="flex items-start gap-3 text-sm text-foreground/90">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--gold-soft)] text-gold">
+                    <Check className="h-3 w-3" strokeWidth={3} />
+                  </span>
+                  {p}
+                </li>
+              ))}
+            </ul>
           </div>
 
-          {/* Mock preview strip */}
-          <div className="mt-16 grid w-full max-w-4xl grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              "from-amber-200/60 to-orange-300/60",
-              "from-rose-200/60 to-pink-300/60",
-              "from-sky-200/60 to-indigo-300/60",
-              "from-emerald-200/60 to-teal-300/60",
-            ].map((grad, i) => (
-              <div
-                key={i}
-                className={`aspect-[4/3] rounded-xl bg-gradient-to-br ${grad} border border-border/40 shadow-lg transition-transform hover:-translate-y-1`}
-              />
-            ))}
+          {/* Sign-in card */}
+          <div className="glass-strong w-full rounded-2xl p-7 sm:p-8 lg:justify-self-end lg:max-w-md">
+            <h2 className="font-display text-2xl font-semibold leading-tight">
+              Sign in to FamilyVista
+            </h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Use your Google account. No password to remember.
+            </p>
+            <div className="mt-6">
+              <GoogleSignInButton redirectTo="/dashboard" />
+            </div>
+            <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
+              By continuing you agree that we store your Google name, email and
+              photo to run your account. Your albums are private to you and the
+              people you invite.
+            </p>
           </div>
         </div>
       </section>
 
       {/* Features */}
-      <section id="features" className="border-t border-border/50 py-24">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
-            Everything your family photo archive needs
+      <section id="features" className="border-t border-[var(--line)] py-20 lg:py-24">
+        <div className="mx-auto w-full max-w-6xl px-5 sm:px-8">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-text">
+            What you get
+          </p>
+          <h2 className="font-display mt-2 max-w-2xl text-3xl font-semibold leading-tight sm:text-4xl">
+            Everything a family archive <em className="text-gold-grad">needs.</em>
           </h2>
-          <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {features.map((f) => (
               <div
                 key={f.title}
-                className="group rounded-xl border border-border/60 bg-card p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
+                className="glass glass-hover rounded-xl p-6 transition-colors"
               >
-                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-primary/12 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--gold-soft)] text-gold">
                   <f.icon className="h-5 w-5" />
                 </div>
-                <h3 className="font-semibold">{f.title}</h3>
+                <h3 className="font-display text-lg font-semibold leading-snug">
+                  {f.title}
+                </h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
                   {f.desc}
                 </p>
@@ -142,50 +180,36 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Footer — premium brand signature */}
-      <footer className="relative border-t border-border/50">
-        <div
-          className="hero-gradient pointer-events-none absolute inset-0 opacity-60"
-          aria-hidden
-        />
-        <div className="relative mx-auto flex max-w-6xl flex-col items-center gap-3 px-6 py-14 text-center">
-          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            Made with
-            <Heart
-              className="h-3.5 w-3.5 animate-pulse fill-rose-500 text-rose-500"
-              aria-hidden
-            />
-            care by
+      {/* Footer */}
+      <footer className="mt-auto border-t border-[var(--line)]">
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-3 px-5 py-14 text-center sm:px-8">
+          <p className="font-display text-2xl font-medium">
+            Every photo tells <em className="text-gold-grad">the story.</em>
           </p>
-          <p className="font-serif text-2xl font-bold tracking-tight sm:text-3xl">
-            <span className="bg-gradient-to-r from-primary via-foreground/80 to-primary bg-clip-text text-transparent">
-              Devnetra Consultancy
-            </span>
+          <p className="text-sm text-muted-foreground">
+            Made with care by{" "}
+            <span className="font-medium text-foreground">Devnetra Consultancy</span>
           </p>
           <div className="mt-2 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
             <a
-              className="transition-colors hover:text-foreground"
+              className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
               href="mailto:devnetraconsultancy@gmail.com"
             >
+              <Mail className="h-3.5 w-3.5 text-gold" />
               devnetraconsultancy@gmail.com
             </a>
-            <span aria-hidden className="opacity-40">
-              ·
-            </span>
             <a
-              className="transition-colors hover:text-foreground"
+              className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
               href="https://instagram.com/scien_nee"
               target="_blank"
               rel="noreferrer"
             >
+              <InstagramIcon className="h-3.5 w-3.5 text-gold" />
               @scien_nee
             </a>
-            <span aria-hidden className="opacity-40">
-              ·
-            </span>
             <span>
               Need help? Press{" "}
-              <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+              <kbd className="rounded border border-[var(--line)] bg-[var(--field)] px-1.5 py-0.5 font-mono text-[10px]">
                 ?
               </kbd>
             </span>

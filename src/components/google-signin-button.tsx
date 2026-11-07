@@ -59,32 +59,25 @@ export function GoogleSignInButton({
   };
 
   return (
-    <div className={cn("flex flex-col items-center gap-3", className)}>
+    <div className={cn("flex w-full flex-col gap-3", className)}>
       <button
+        type="button"
         onClick={signIn}
         disabled={loading}
-        className="group relative inline-flex h-14 w-full max-w-xs cursor-pointer items-center justify-center gap-3 overflow-hidden rounded-full bg-foreground px-8 text-base font-semibold text-background shadow-[0_8px_30px_rgb(0,0,0,0.25)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_12px_40px_rgb(0,0,0,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-80 dark:bg-white dark:text-black"
+        className="glass glass-hover inline-flex h-12 w-full cursor-pointer items-center justify-center gap-3 rounded-lg px-5 text-[15px] font-medium text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-wait disabled:opacity-70"
       >
-        {/* shimmer sweep */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full dark:via-black/10"
-        />
-        {/* animated glow ring */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -inset-1 rounded-full bg-gradient-to-r from-[#4285F4] via-[#EA4335] to-[#FBBC05] opacity-0 blur-md transition-opacity duration-500 group-hover:opacity-40 group-disabled:opacity-30"
-        />
         {loading ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <Loader2 className="h-5 w-5 animate-spin text-gold" />
         ) : (
-          <>
-            <GoogleG className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" />
-            <span className="relative z-10 tracking-tight">{label}</span>
-          </>
+          <GoogleG className="h-5 w-5" />
         )}
+        <span>{loading ? "Redirecting to Google…" : label}</span>
       </button>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

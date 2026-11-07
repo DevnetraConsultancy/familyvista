@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import * as InputPrimitive from "@radix-ui/react-label"; // not used; plain input
 import { cn } from "@/lib/utils";
 
 const Input = React.forwardRef<
@@ -12,7 +11,7 @@ const Input = React.forwardRef<
     <input
       type={type}
       className={cn(
-        "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-9 w-full rounded-md border border-input bg-[var(--field)] px-3 py-1 text-sm transition-[border-color,box-shadow] file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground/70 hover:border-[color-mix(in_oklab,var(--gold)_40%,var(--input))] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       ref={ref}

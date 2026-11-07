@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { LogoMark } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
 
 const SHORTCUTS: [string, string][] = [
@@ -23,10 +24,11 @@ const FEATURES = [
   "Create albums and sub-albums with a collapsible sidebar",
   "Bulk upload photos straight to secure cloud storage",
   "Drag & drop to reorder photos exactly how you like",
-  "Four view modes — small, large, list and full-screen slideshow",
-  "Elegant white borders, inside or outside every photo",
+  "Four view modes: small, large, list and full-screen slideshow",
+  "Optional photo borders in white, cream, gold or black",
+  "Share albums with family by email (view-only)",
   "Safe trash with restore & phrase-protected permanent delete",
-  "Beautiful dark and light themes",
+  "Pure black and warm cream themes",
 ];
 
 function InstagramIcon({ className }: { className?: string }) {
@@ -53,6 +55,14 @@ function isTypingTarget(t: EventTarget | null): boolean {
   return (
     !!el &&
     (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)
+  );
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <h4 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gold-text">
+      {children}
+    </h4>
   );
 }
 
@@ -91,29 +101,28 @@ export function HelpDialog({
         {trigger === "labeled" && <span>Help</span>}
       </Button>
 
-      <DialogContent className="max-w-md gap-0 rounded-2xl p-6">
+      <DialogContent className="max-w-md gap-0 p-6 sm:p-7">
         {/* Brand header */}
-        <div className="text-center">
-          <DialogTitle className="font-serif text-3xl font-bold tracking-tight">
-            FamilyVista
+        <div className="flex flex-col items-center text-center">
+          <LogoMark className="mb-3 h-11 w-11 rounded-xl" />
+          <DialogTitle className="font-display text-[1.75rem] font-semibold">
+            Family<span className="text-gold-grad">Vista</span>
           </DialogTitle>
           <DialogDescription className="mt-1 text-sm text-muted-foreground">
-            Your Family Albums, Beautifully Organized
+            Your family albums, beautifully organized.
           </DialogDescription>
         </div>
 
         {/* Keyboard shortcuts */}
-        <div className="mt-6">
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary">
-            Keyboard Shortcuts
-          </h4>
-          <div className="mt-2.5 space-y-2">
+        <div className="mt-7">
+          <Eyebrow>Keyboard shortcuts</Eyebrow>
+          <div className="mt-3 space-y-2">
             {SHORTCUTS.map(([key, desc]) => (
               <div
                 key={key}
                 className="flex items-center justify-between gap-4 text-sm"
               >
-                <kbd className="rounded-md border bg-muted px-2 py-0.5 font-mono text-[11px] shadow-sm">
+                <kbd className="rounded-md border border-[var(--line)] bg-[var(--field)] px-2 py-0.5 font-mono text-[11px] text-foreground">
                   {key}
                 </kbd>
                 <span className="text-right text-muted-foreground">{desc}</span>
@@ -123,27 +132,29 @@ export function HelpDialog({
         </div>
 
         {/* Features */}
-        <div className="mt-6">
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary">
-            Features
-          </h4>
-          <ul className="mt-2.5 list-disc space-y-1.5 pl-4 text-sm leading-relaxed text-muted-foreground marker:text-primary/60">
+        <div className="mt-7">
+          <Eyebrow>Features</Eyebrow>
+          <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-muted-foreground">
             {FEATURES.map((f) => (
-              <li key={f}>{f}</li>
+              <li key={f} className="flex gap-2.5">
+                <span
+                  aria-hidden
+                  className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-gold"
+                />
+                {f}
+              </li>
             ))}
           </ul>
         </div>
 
-        <hr className="my-5 border-border/70" />
+        <hr className="my-6 border-[var(--line)]" />
 
         {/* Contact */}
         <div>
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary">
-            Contact Us
-          </h4>
-          <p className="mt-2.5 text-sm text-muted-foreground">
+          <Eyebrow>Contact us</Eyebrow>
+          <p className="mt-3 text-sm text-muted-foreground">
             Made by{" "}
-            <span className="font-semibold text-foreground">
+            <span className="font-medium text-foreground">
               Devnetra Consultancy
             </span>
           </p>
@@ -152,7 +163,7 @@ export function HelpDialog({
               href="mailto:devnetraconsultancy@gmail.com"
               className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
             >
-              <Mail className="h-3.5 w-3.5 text-primary" />
+              <Mail className="h-3.5 w-3.5 text-gold" />
               devnetraconsultancy@gmail.com
             </a>
             <a
@@ -161,18 +172,14 @@ export function HelpDialog({
               rel="noreferrer"
               className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
             >
-              <InstagramIcon className="h-3.5 w-3.5 text-primary" />
+              <InstagramIcon className="h-3.5 w-3.5 text-gold" />
               @scien_nee on Instagram
             </a>
           </div>
         </div>
 
-        <div className="mt-6 flex justify-center">
-          <Button
-            variant="secondary"
-            className="rounded-full px-8"
-            onClick={() => setOpen(false)}
-          >
+        <div className="mt-7 flex justify-center">
+          <Button size="lg" className="px-10" onClick={() => setOpen(false)}>
             Got it
           </Button>
         </div>

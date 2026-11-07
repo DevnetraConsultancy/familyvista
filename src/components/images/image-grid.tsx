@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -28,6 +28,9 @@ import {
   Trash2,
   FolderInput,
   Info,
+  Eye,
+  Check,
+  CheckSquare,
 } from "lucide-react";
 import {
   ContextMenu,
@@ -37,8 +40,8 @@ import {
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
 import { useUIStore } from "@/lib/store";
-import type { Image } from "@/lib/types";
-import { cn, formatDate } from "@/lib/utils";
+import type { Image, ViewMode } from "@/lib/types";
+import { cn, formatBytes, formatDate } from "@/lib/utils";
 import { ImageViewer } from "@/components/images/image-viewer";
 
 interface Props {
@@ -66,19 +69,43 @@ export function ImageGrid({
   readOnly = false,
   dragEnabled = true,
 }: Props) {
-  const { viewMode, borderSettings } = useUIStore();
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const { selectionMode, selectedIds, toggleSelected, clearSelection } =
-    useUIStore();
+  const viewMode = useUIStore((s) => s.viewMode);
   const setViewMode = useUIStore((s) => s.setViewMode);
+  const borderSettings = useUIStore((s) => s.borderSettings);
+  const selectionMode = useUIStore((s) => s.selectionMode);
+  const selectedIds = useUIStore((s) => s.selectedIds);
+  const toggleSelected = useUIStore((s) => s.toggleSelected);
+  const selectMany = useUIStore((s) => s.selectMany);
+  const clearSelection = useUIStore((s) => s.clearSelection);
 
-  // "Play" view mode opens the slideshow immediately
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [autoplay, setAutoplay] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const lastClicked = useRef<string | null>(null);
+  const [prevMode, setPrevMode] = useState<ViewMode>("large");
+
+  // "Slideshow" view mode opens the viewer (playing) without an effect:
+  // the open index is derived from the mode until the user navigates.
+  if (viewMode !== "play" && viewMode !== prevMode) setPrevMode(viewMode);
+  const slideshow = viewMode === "play" && images.length > 0;
+  const openIndex = viewerIndex ?? (slideshow ? 0 : null);
+  const playing = autoplay || (slideshow && viewerIndex === null);
+
+  // Esc clears selection when the viewer is not open.
   useEffect(() => {
-    if (viewMode === "play" && images.length > 0 && viewerIndex === null) {
-      setViewerIndex(0);
-    }
-  }, [viewMode, images.length, viewerIndex]);
+    if (!selectionMode || openIndex !== null) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("[role=dialog]") || t?.tagName === "INPUT") return;
+      if (e.key === "Escape") clearSelection();
+      if ((e.key === "a" || e.key === "A") && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        selectMany(images.map((i) => i.id));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectionMode, openIndex, clearSelection, selectMany, images]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -86,19 +113,46 @@ export function ImageGrid({
   );
 
   const activeImage = images.find((i) => i.id === activeId) ?? null;
-
-  const canDrag = dragEnabled && !readOnly;
+  const canDrag = dragEnabled && !readOnly && !selectionMode;
 
   const handleDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
-
   const handleDragEnd = (e: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const oldIdx = images.findIndex((i) => i.id === active.id);
     const newIdx = images.findIndex((i) => i.id === over.id);
-    const reordered = arrayMove(images, oldIdx, newIdx);
-    onReorder(reordered.map((i) => i.id));
+    onReorder(arrayMove(images, oldIdx, newIdx).map((i) => i.id));
+  };
+
+  const closeViewer = () => {
+    setViewerIndex(null);
+    setAutoplay(false);
+    if (viewMode === "play") setViewMode(prevMode);
+  };
+
+  /** Click: open; in selection mode (or with Ctrl/Cmd/Shift) toggle/range-select. */
+  const handleTileClick = (img: Image, e: React.MouseEvent) => {
+    const modifier = e.metaKey || e.ctrlKey;
+    if (!readOnly && (selectionMode || modifier || e.shiftKey)) {
+      if (e.shiftKey && lastClicked.current) {
+        const a = images.findIndex((i) => i.id === lastClicked.current);
+        const b = images.findIndex((i) => i.id === img.id);
+        if (a !== -1 && b !== -1) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          const range = images.slice(lo, hi + 1).map((i) => i.id);
+          selectMany(Array.from(new Set([...Array.from(selectedIds), ...range])));
+          return;
+        }
+      }
+      if (!selectionMode) useUIStore.getState().toggleSelectionMode();
+      toggleSelected(img.id);
+      lastClicked.current = img.id;
+      return;
+    }
+    lastClicked.current = img.id;
+    setAutoplay(false);
+    setViewerIndex(images.findIndex((i) => i.id === img.id));
   };
 
   if (images.length === 0) return null;
@@ -117,48 +171,51 @@ export function ImageGrid({
         >
           <div
             className={cn(
-              viewMode === "small" && "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2",
-              viewMode === "large" && "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4",
-              viewMode === "list" && "flex flex-col gap-1"
+              viewMode === "small" &&
+                "grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 2xl:grid-cols-10",
+              (viewMode === "large" || viewMode === "play") &&
+                "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4",
+              viewMode === "list" && "flex flex-col gap-1.5"
             )}
             style={
-              borderSettings.enabled
-                ? { gap: `${Math.max(2, borderSettings.width)}px` }
+              borderSettings.enabled && viewMode !== "list"
+                ? { gap: `${Math.max(4, borderSettings.width)}px` }
                 : undefined
             }
           >
-            {images.map((img) => (
+            {images.map((img, idx) => (
               <SortableTile
                 key={img.id}
                 image={img}
+                index={idx}
                 viewMode={viewMode}
                 readOnly={readOnly}
                 dragEnabled={canDrag}
+                onClick={(e) => handleTileClick(img, e)}
                 onOpen={() => {
-                  if (selectionMode && !readOnly) {
-                    toggleSelected(img.id);
-                  } else {
-                    setViewerIndex(images.findIndex((i) => i.id === img.id));
-                  }
+                  setAutoplay(false);
+                  setViewerIndex(idx);
+                }}
+                onSelectToggle={() => {
+                  if (!selectionMode) useUIStore.getState().toggleSelectionMode();
+                  toggleSelected(img.id);
+                  lastClicked.current = img.id;
                 }}
                 onRename={() => onRename(img)}
                 onTrash={() => onTrash([img.id])}
                 onDuplicate={() => onDuplicate([img.id])}
                 onMove={() => onMove([img.id])}
                 onProperties={() => onProperties(img)}
-                onTrashSelected={() => {
-                  const ids = Array.from(selectedIds);
-                  onTrash(ids.length > 0 ? ids : [img.id]);
-                  clearSelection();
-                }}
+                onTrashSelected={() => onTrash(Array.from(selectedIds))}
               />
             ))}
           </div>
         </SortableContext>
 
-        <DragOverlay>
+        <DragOverlay dropAnimation={null}>
           {activeImage ? (
             <div className="drag-overlay-tile">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={activeImage.thumbnail_url ?? activeImage.original_url}
                 alt=""
@@ -169,16 +226,17 @@ export function ImageGrid({
         </DragOverlay>
       </DndContext>
 
-      {viewerIndex !== null && (
+      {openIndex !== null && (
         <ImageViewer
           images={images}
-          index={viewerIndex}
-          onClose={() => {
-            setViewMode("large");
-            setViewerIndex(null);
+          index={Math.min(openIndex, images.length - 1)}
+          onClose={closeViewer}
+          onIndexChange={(i) => {
+            if (slideshow) setAutoplay(true);
+            setViewerIndex(i);
           }}
-          onIndexChange={setViewerIndex}
           onProperties={onProperties}
+          autoplay={playing}
           readOnly={readOnly}
         />
       )}
@@ -189,10 +247,13 @@ export function ImageGrid({
 // ---------- Tile ----------
 function SortableTile({
   image,
+  index,
   viewMode,
   readOnly,
   dragEnabled,
+  onClick,
   onOpen,
+  onSelectToggle,
   onRename,
   onTrash,
   onDuplicate,
@@ -201,10 +262,13 @@ function SortableTile({
   onTrashSelected,
 }: {
   image: Image;
-  viewMode: string;
+  index: number;
+  viewMode: ViewMode;
   readOnly: boolean;
   dragEnabled: boolean;
+  onClick: (e: React.MouseEvent) => void;
   onOpen: () => void;
+  onSelectToggle: () => void;
   onRename: () => void;
   onTrash: () => void;
   onDuplicate: () => void;
@@ -212,22 +276,19 @@ function SortableTile({
   onProperties: () => void;
   onTrashSelected: () => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: image.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: image.id, disabled: !dragEnabled });
 
-  const { borderSettings, selectionMode, selectedIds } = useUIStore();
+  const borderSettings = useUIStore((s) => s.borderSettings);
+  const selectionMode = useUIStore((s) => s.selectionMode);
+  const selectedIds = useUIStore((s) => s.selectedIds);
   const selected = selectedIds.has(image.id);
+  const src = image.thumbnail_url ?? image.original_url;
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
+    opacity: isDragging ? 0.35 : 1,
   };
 
   const borderStyle: React.CSSProperties = borderSettings.enabled
@@ -236,22 +297,45 @@ function SortableTile({
       : { border: `${borderSettings.width}px solid ${borderSettings.color}` }
     : {};
 
-  const dragHandle =
-    readOnly || !dragEnabled ? null : (
+  const dragHandle = dragEnabled ? (
     <span
       {...attributes}
       {...listeners}
-      className="absolute right-1.5 top-1.5 z-10 cursor-grab rounded-md bg-black/45 p-1 text-white opacity-0 transition-opacity backdrop-blur hover:bg-black/65 group-hover:opacity-100 active:cursor-grabbing"
+      className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 cursor-grab items-center justify-center rounded-md border border-white/15 bg-black/55 text-white opacity-0 backdrop-blur transition-opacity hover:bg-black/75 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
       onClick={(e) => e.stopPropagation()}
+      aria-label="Drag to reorder"
     >
       <GripVertical className="h-3.5 w-3.5" />
     </span>
-  );
+  ) : null;
+
+  const checkbox = !readOnly ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelectToggle();
+      }}
+      className={cn(
+        "absolute left-1.5 top-1.5 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border transition-all",
+        selected
+          ? "border-transparent text-gold-fg opacity-100 [background:var(--gold-grad)]"
+          : "border-white/40 bg-black/45 text-transparent backdrop-blur hover:border-white/80",
+        selectionMode || selected
+          ? "opacity-100"
+          : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+      )}
+      aria-label={selected ? "Deselect photo" : "Select photo"}
+      aria-pressed={selected}
+    >
+      <Check className="h-3.5 w-3.5" strokeWidth={3} />
+    </button>
+  ) : null;
 
   const menuContent = readOnly ? (
     <ContextMenuContent>
       <ContextMenuItem onClick={onOpen}>
-        <Pencil />
+        <Eye />
         View
       </ContextMenuItem>
       <ContextMenuItem onClick={onProperties}>
@@ -262,13 +346,18 @@ function SortableTile({
   ) : (
     <ContextMenuContent>
       <ContextMenuItem onClick={onOpen}>
-        <Pencil />
-        {viewMode === "list" ? "Open" : "View"}
+        <Eye />
+        View
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onSelectToggle}>
+        <CheckSquare />
+        {selected ? "Deselect" : "Select"}
       </ContextMenuItem>
       <ContextMenuItem onClick={onProperties}>
         <Info />
         Properties
       </ContextMenuItem>
+      <ContextMenuSeparator />
       <ContextMenuItem onClick={onRename}>
         <Pencil />
         Rename / caption
@@ -282,13 +371,13 @@ function SortableTile({
         Move to album…
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem onClick={onTrash} className="text-destructive">
-        <Trash2 />
+      <ContextMenuItem onClick={onTrash} className="text-danger focus:text-danger">
+        <Trash2 className="!text-danger" />
         Move to trash
       </ContextMenuItem>
       {selectedIds.size > 1 && selected && (
-        <ContextMenuItem onClick={onTrashSelected} className="text-destructive">
-          <Trash2 />
+        <ContextMenuItem onClick={onTrashSelected} className="text-danger focus:text-danger">
+          <Trash2 className="!text-danger" />
           Trash all {selectedIds.size} selected
         </ContextMenuItem>
       )}
@@ -301,26 +390,43 @@ function SortableTile({
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <div
+              role="button"
+              tabIndex={0}
               className={cn(
-                "flex w-full cursor-pointer items-center gap-3 rounded-lg border bg-card p-2 text-left transition-colors hover:bg-accent/50",
-                selected && "tile-selected"
+                "flex w-full cursor-pointer items-center gap-3 rounded-lg border border-[var(--glass-border)] bg-[var(--glass)] p-2 text-left transition-colors hover:bg-[var(--glass-hover)]",
+                selected && "tile-selected bg-[var(--gold-soft)]"
               )}
-              onClick={onOpen}
+              onClick={onClick}
+              onKeyDown={(e) => e.key === "Enter" && onOpen()}
             >
-              <img
-                src={image.thumbnail_url ?? image.original_url}
-                alt={image.file_name}
-                className="h-12 w-16 rounded-md object-cover"
-                style={borderStyle}
-              />
+              <span className="w-6 shrink-0 text-center text-[11px] tabular-nums text-muted-foreground">
+                {index + 1}
+              </span>
+              <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-md bg-black/40">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
+                {checkbox}
+              </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{image.file_name}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="truncate text-xs text-muted-foreground">
+                  {image.caption ? `${image.caption} · ` : ""}
                   {formatDate(image.created_at)}
-                  {image.caption ? ` — ${image.caption}` : ""}
+                  {image.width && image.height ? ` · ${image.width}×${image.height}` : ""}
+                  {image.file_size ? ` · ${formatBytes(image.file_size)}` : ""}
                 </p>
               </div>
-              {dragHandle}
+              {dragEnabled && (
+                <span
+                  {...attributes}
+                  {...listeners}
+                  className="flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 active:cursor-grabbing"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="Drag to reorder"
+                >
+                  <GripVertical className="h-4 w-4" />
+                </span>
+              )}
             </div>
           </ContextMenuTrigger>
           {menuContent}
@@ -329,33 +435,44 @@ function SortableTile({
     );
   }
 
+  const showCaption = viewMode !== "small" && (image.caption || image.file_name);
+
   return (
     <div ref={setNodeRef} style={style} className="group relative">
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
+            role="button"
+            tabIndex={0}
             className={cn(
-              "relative cursor-pointer overflow-hidden rounded-lg bg-muted",
+              "relative cursor-pointer overflow-hidden rounded-lg bg-black/40 transition-[box-shadow,transform] duration-200",
               viewMode === "small" ? "aspect-square" : "aspect-[4/3]",
-              selected && "tile-selected"
+              selected && "tile-selected",
+              !selected && "hover:shadow-[0_12px_30px_-12px_rgba(0,0,0,0.7)]"
             )}
             style={borderStyle}
-            onClick={onOpen}
+            onClick={onClick}
+            onKeyDown={(e) => e.key === "Enter" && onOpen()}
+            aria-label={image.caption || image.file_name}
           >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={image.thumbnail_url ?? image.original_url}
-              alt={image.file_name}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              src={src}
+              alt={image.caption || image.file_name}
+              className={cn(
+                "h-full w-full object-cover transition-transform duration-500",
+                !selectionMode && "group-hover:scale-[1.03]",
+                selected && "brightness-90"
+              )}
               loading="lazy"
               draggable={false}
             />
-            {viewMode === "large" && (image.caption || image.file_name) && (
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 pt-6">
-                <p className="truncate text-xs text-white">
-                  {image.caption || image.file_name}
-                </p>
+            {showCaption && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-2.5 pt-8 opacity-0 transition-opacity group-hover:opacity-100">
+                <p className="truncate text-xs text-white">{image.caption || image.file_name}</p>
               </div>
             )}
+            {checkbox}
             {dragHandle}
           </div>
         </ContextMenuTrigger>

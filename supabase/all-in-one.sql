@@ -274,9 +274,33 @@ create policy "groups_shared_read" on public.image_groups
     )
   );
 
--- Album shares: owner manages their invites
-create policy "shares_owner_all" on public.album_shares
-  for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+-- Album shares: owner manages their invites.
+-- Insert/update must also prove the caller OWNS the album being shared;
+-- otherwise anyone could grant themselves read access to any album.
+create policy "shares_owner_select" on public.album_shares
+  for select using (auth.uid() = owner_id);
+
+create policy "shares_owner_insert" on public.album_shares
+  for insert with check (
+    auth.uid() = owner_id
+    and exists (
+      select 1 from public.albums a
+      where a.id = album_shares.album_id and a.user_id = auth.uid()
+    )
+  );
+
+create policy "shares_owner_update" on public.album_shares
+  for update using (auth.uid() = owner_id)
+  with check (
+    auth.uid() = owner_id
+    and exists (
+      select 1 from public.albums a
+      where a.id = album_shares.album_id and a.user_id = auth.uid()
+    )
+  );
+
+create policy "shares_owner_delete" on public.album_shares
+  for delete using (auth.uid() = owner_id);
 
 -- Album shares: invitee can see invites addressed to them
 create policy "shares_invitee_read" on public.album_shares

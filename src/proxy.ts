@@ -1,9 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PROTECTED_ROUTES = ["/dashboard", "/trash", "/settings"];
+const PROTECTED_ROUTES = ["/dashboard"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -27,10 +27,13 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // IMPORTANT: do not run code between createServerClient and getClaims()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // IMPORTANT: do not run code between createServerClient and getUser()
+  let user: { id: string } | null = null;
+  try {
+    user = (await supabase.auth.getUser()).data.user;
+  } catch {
+    user = null; // unreachable Supabase → treat as signed out
+  }
 
   const pathname = request.nextUrl.pathname;
   const isProtected = PROTECTED_ROUTES.some(

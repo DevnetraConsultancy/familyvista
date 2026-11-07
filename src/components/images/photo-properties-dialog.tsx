@@ -21,7 +21,7 @@ interface Props {
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 py-1.5">
+    <div className="flex items-baseline justify-between gap-4 py-2">
       <span className="shrink-0 text-sm text-muted-foreground">{label}</span>
       <span className="min-w-0 truncate text-right text-sm font-medium">
         {value}
@@ -30,17 +30,15 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-/** e.g. 4032×3024 → "4:3" (reduced by GCD; returns "—" when unknown). */
-function aspectRatio(w: number | null, h: number | null): string {
-  if (!w || !h) return "—";
-  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
-  let a = w,
-    b = h;
+/** e.g. 4032×3024 → "4:3" (reduced by GCD; "unknown" when missing). */
+function aspectRatio(w: number | null, h: number | null): string | null {
+  if (!w || !h) return null;
+  let a = w;
+  let b = h;
   while (b) {
     [a, b] = [b, a % b];
   }
-  const ratio = a > 0 && b >= 0 ? `${w / a}:${h / a}` : "—";
-  return ratio;
+  return a > 0 ? `${w / a}:${h / a}` : null;
 }
 
 function formatTypeName(mime: string | null, fileName: string): string {
@@ -48,6 +46,20 @@ function formatTypeName(mime: string | null, fileName: string): string {
   if (!mime) return ext || "Unknown";
   const sub = mime.split("/")[1]?.toUpperCase() ?? mime.toUpperCase();
   return sub === ext ? sub : `${sub} (${ext || "?"})`;
+}
+
+function DateTime({ iso }: { iso: string }) {
+  return (
+    <>
+      {formatDate(iso)}
+      <span className="ml-1 font-normal text-muted-foreground">
+        {new Date(iso).toLocaleTimeString(undefined, {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+      </span>
+    </>
+  );
 }
 
 export function PhotoPropertiesDialog({
@@ -63,26 +75,26 @@ export function PhotoPropertiesDialog({
     image.width && image.height
       ? ((image.width * image.height) / 1_000_000).toFixed(1)
       : null;
+  const ratio = aspectRatio(image.width, image.height);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Photo properties</DialogTitle>
-          <DialogDescription className="truncate">
-            {image.file_name}
-          </DialogDescription>
+          <DialogDescription className="truncate">{image.file_name}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center justify-center overflow-hidden rounded-lg bg-muted p-2">
+        <div className="flex items-center justify-center overflow-hidden rounded-lg border border-[var(--line)] bg-black/40 p-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={image.thumbnail_url ?? image.original_url}
             alt={image.file_name}
-            className="max-h-56 rounded object-contain"
+            className="max-h-56 rounded-md object-contain"
           />
         </div>
 
-        <div className="divide-y divide-border/60">
+        <div className="divide-y divide-[var(--line)]">
           <Row label="Name" value={stripExtension(image.file_name)} />
           {image.caption && <Row label="Caption" value={image.caption} />}
           <Row
@@ -90,42 +102,19 @@ export function PhotoPropertiesDialog({
             value={
               image.width && image.height
                 ? `${image.width.toLocaleString()} × ${image.height.toLocaleString()} px`
-                : "—"
+                : "Unknown"
             }
           />
           {megapixels && (
             <Row
               label="Megapixels"
-              value={`${megapixels} MP${aspectRatio(image.width, image.height) !== "—" ? ` · ${aspectRatio(image.width, image.height)}` : ""}`}
+              value={`${megapixels} MP${ratio ? ` · ${ratio}` : ""}`}
             />
           )}
           <Row label="File size" value={formatBytes(image.file_size)} />
-          <Row
-            label="Format"
-            value={formatTypeName(image.mime_type, image.file_name)}
-          />
-          <Row
-            label="Uploaded"
-            value={
-              <>
-                {formatDate(image.created_at)}
-                <span className="ml-1 font-normal text-muted-foreground">
-                  {new Date(image.created_at).toLocaleTimeString()}
-                </span>
-              </>
-            }
-          />
-          <Row
-            label="Modified"
-            value={
-              <>
-                {formatDate(image.updated_at)}
-                <span className="ml-1 font-normal text-muted-foreground">
-                  {new Date(image.updated_at).toLocaleTimeString()}
-                </span>
-              </>
-            }
-          />
+          <Row label="Format" value={formatTypeName(image.mime_type, image.file_name)} />
+          <Row label="Uploaded" value={<DateTime iso={image.created_at} />} />
+          <Row label="Modified" value={<DateTime iso={image.updated_at} />} />
           {position !== undefined && (
             <Row
               label="Position in album"

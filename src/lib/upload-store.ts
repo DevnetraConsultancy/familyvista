@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import { uploadFileWithProgress, buildObjectPath } from "@/lib/supabase/tus-upload";
 import { optimizeForUpload } from "@/lib/image-optimize";
+import { makeThumbnail, readImageDimensions } from "@/lib/thumbnail";
 import { isImageFile } from "@/lib/utils";
 
 const BUCKET = "images";
@@ -32,8 +33,6 @@ export interface UploadItem {
   controller?: AbortController;
   /** Original File handle so failed uploads can be retried. */
   file: () => File;
-  /** Optimized blob when optimization won; undefined = upload the original. */
-  optimizedBlob?: Blob;
   startedAt: number;
 }
 
@@ -45,11 +44,12 @@ interface UploadState {
 
   enqueue: (albumId: string, files: File[]) => number;
   retry: (id: string) => void;
+  retryAllFailed: () => void;
   cancel: (id: string) => void;
+  cancelAll: () => void;
   dismiss: (id: string) => void;
   clearFinished: () => void;
   setTrayOpen: (open: boolean) => void;
-  _pump: () => void;
 }
 
 let seq = 0;
@@ -72,10 +72,9 @@ export const useUploadStore = create<UploadState>((set, get) => {
       if (slots <= 0) break;
       if (item.status !== "queued") continue;
       slots--;
-      // reserve slot synchronously to avoid double-start
       set((s) => ({
         items: s.items.map((i) =>
-          i.id === item.id ? { ...i, status: "uploading" as const } : i
+          i.id === item.id ? { ...i, status: "optimizing" as const } : i
         ),
       }));
       void runOne(item.id);
@@ -102,24 +101,28 @@ export const useUploadStore = create<UploadState>((set, get) => {
       const user = session?.user;
       if (!session || !user) throw new Error("Not signed in");
       const accessToken = session.access_token;
+      const original = item.file();
 
-      // Compress before upload: mozjpeg q90 for JPEG, lossless oxipng for PNG.
-      // Smaller-wins + fall-back-to-original are guaranteed inside the helper.
-      patch(id, { status: "optimizing" });
-      const { blob, optimized } = await optimizeForUpload(item.file());
+      // Compress before upload (mozjpeg q90 / lossless oxipng); the helper
+      // guarantees the result is never bigger than the original.
+      const { blob } = await optimizeForUpload(original);
       const finalFile =
-        blob === item.file()
-          ? item.file()
+        blob === original
+          ? original
           : new File([blob], item.fileName, {
               type: blob.type || "application/octet-stream",
             });
-      patch(id, {
-        optimizedBlob: optimized ? finalFile : undefined,
-        size: finalFile.size,
-      });
+      patch(id, { size: finalFile.size, status: "uploading" });
+      if (controller.signal.aborted) throw new DOMException("Upload aborted", "AbortError");
+
+      // Dimensions + thumbnail come from the local file — no need to download
+      // the object back from storage after uploading it.
+      const [dims, thumb] = await Promise.all([
+        readImageDimensions(original).catch(() => null),
+        makeThumbnail(original).catch(() => null),
+      ]);
 
       const path = buildObjectPath(user.id, item.albumId, item.fileName);
-
       await uploadFileWithProgress(finalFile, path, {
         accessToken,
         onProgress: (bytes) => patch(id, { bytesUploaded: bytes }),
@@ -130,7 +133,22 @@ export const useUploadStore = create<UploadState>((set, get) => {
 
       const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
       const url = pub.publicUrl;
-      const dims = await getImageDimensions(url).catch(() => null);
+
+      // Small WebP thumbnail next to the original (grid + covers load fast).
+      let thumbUrl = url;
+      if (thumb) {
+        const thumbPath = path.replace(/\/([^/]+)$/, "/thumbs/$1.webp");
+        const { error: thumbErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(thumbPath, thumb, {
+            contentType: "image/webp",
+            cacheControl: "31536000",
+            upsert: false,
+          });
+        if (!thumbErr) {
+          thumbUrl = supabase.storage.from(BUCKET).getPublicUrl(thumbPath).data.publicUrl;
+        }
+      }
 
       const { error: dbErr } = await supabase.from("images").insert({
         album_id: item.albumId,
@@ -138,11 +156,11 @@ export const useUploadStore = create<UploadState>((set, get) => {
         user_id: user.id,
         file_name: item.fileName,
         original_url: url,
-        thumbnail_url: url,
+        thumbnail_url: thumbUrl,
         width: dims?.width ?? null,
         height: dims?.height ?? null,
-        file_size: item.size,
-        mime_type: item.file().type || null,
+        file_size: finalFile.size,
+        mime_type: finalFile.type || original.type || null,
         sort_order: await nextSortOrder(supabase, item.albumId),
       });
       if (dbErr) throw new Error(dbErr.message);
@@ -156,13 +174,13 @@ export const useUploadStore = create<UploadState>((set, get) => {
       }));
     } catch (err) {
       const aborted = err instanceof DOMException && err.name === "AbortError";
-      patch(id, {
-        status: aborted ? "queued" : "error",
-        error: aborted ? undefined : describeError(err),
-      });
+      if (aborted) {
+        set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+      } else {
+        patch(id, { status: "error", error: describeError(err) });
+      }
     } finally {
-      patch(id, { controller: undefined, optimizedBlob: undefined });
-      // kick the next queued item
+      patch(id, { controller: undefined });
       setTimeout(() => pump(), 0);
     }
   };
@@ -202,14 +220,34 @@ export const useUploadStore = create<UploadState>((set, get) => {
       pump();
     },
 
+    retryAllFailed: () => {
+      set((s) => ({
+        items: s.items.map((i) =>
+          i.status === "error"
+            ? { ...i, status: "queued" as const, error: undefined, bytesUploaded: 0, size: i.originalSize }
+            : i
+        ),
+      }));
+      pump();
+    },
+
     cancel: (id) => {
       const item = get().items.find((i) => i.id === id);
-      if (item?.status === "uploading") {
+      if (!item) return;
+      if (item.status === "queued") {
+        set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+      } else if (item.status !== "done" && item.status !== "error") {
         item.controller?.abort();
       }
-      // queued items can simply be removed
-      if (item?.status === "queued") {
-        set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+    },
+
+    cancelAll: () => {
+      for (const item of get().items) {
+        if (item.status === "queued") {
+          set((s) => ({ items: s.items.filter((i) => i.id !== item.id) }));
+        } else if (item.status !== "done" && item.status !== "error") {
+          item.controller?.abort();
+        }
       }
     },
 
@@ -221,7 +259,6 @@ export const useUploadStore = create<UploadState>((set, get) => {
       })),
 
     setTrayOpen: (open) => set({ trayOpen: open }),
-    _pump: () => pump(),
   };
 });
 
@@ -234,17 +271,6 @@ async function nextSortOrder(supabase: ReturnType<typeof createClient>, albumId:
     .order("sort_order", { ascending: false })
     .limit(1);
   return (data?.[0]?.sort_order ?? -1) + 1;
-}
-
-export function getImageDimensions(
-  url: string
-): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new window.Image();
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    img.onerror = () => reject(new Error("Could not load image"));
-    img.src = url;
-  });
 }
 
 function describeError(err: unknown): string {

@@ -7,6 +7,15 @@ import type { ViewMode, BorderSettings, SortKey } from "@/lib/types";
 /** Seconds each photo stays on screen in the slideshow. */
 export const SLIDESHOW_INTERVALS = [1, 2, 3, 5, 10, 15] as const;
 
+/** Border colour presets (name → CSS colour). */
+export const BORDER_COLORS: { name: string; value: string }[] = [
+  { name: "White", value: "#ffffff" },
+  { name: "Cream", value: "#f3ead6" },
+  { name: "Gold", value: "#e9bd50" },
+  { name: "Charcoal", value: "#1a1a18" },
+  { name: "Black", value: "#000000" },
+];
+
 interface UIState {
   sidebarOpen: boolean;
   toggleSidebar: () => void;
@@ -74,7 +83,7 @@ export const useUIStore = create<UIState>()(
         const next = new Set(get().selectedIds);
         if (next.has(id)) next.delete(id);
         else next.add(id);
-        set({ selectedIds: next, selectionMode: next.size > 0 });
+        set({ selectedIds: next });
       },
       selectMany: (ids) =>
         set({ selectedIds: new Set(ids), selectionMode: ids.length > 0 }),
@@ -85,7 +94,7 @@ export const useUIStore = create<UIState>()(
       name: "familyvista-ui",
       partialize: (state) => ({
         sidebarOpen: state.sidebarOpen,
-        viewMode: state.viewMode,
+        viewMode: state.viewMode === "play" ? "large" : state.viewMode,
         borderSettings: state.borderSettings,
         sortBy: state.sortBy,
         sortAsc: state.sortAsc,

@@ -1,17 +1,54 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useEffect } from "react";
+import { create } from "zustand";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import type { Album, Image } from "@/lib/types";
 
-export function useAlbums() {
-  const supabase = createClient();
-  const [albums, setAlbums] = useState<Album[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+/**
+ * One shared album store for the whole dashboard.
+ *
+ * Previously every consumer (sidebar, dashboard grid, album page) ran its own
+ * `useAlbums()` with private state, so creating or renaming an album in one
+ * place left the others stale until a full reload, and the album + image
+ * tables were fetched three times per navigation. Now there is one fetch and
+ * one source of truth; every mutation refreshes it for all subscribers.
+ */
+interface AlbumState {
+  /** Albums owned by the signed-in user (not trashed). */
+  albums: Album[];
+  /** Albums other people shared with the signed-in user (read-only). */
+  sharedAlbums: Album[];
+  userId: string | null;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+  fetchAlbums: () => Promise<void>;
+}
 
-  const fetchAlbums = useCallback(async () => {
+type ImageStat = Pick<
+  Image,
+  "album_id" | "sort_order" | "thumbnail_url" | "original_url"
+>;
+
+export const useAlbumStore = create<AlbumState>((set) => ({
+  albums: [],
+  sharedAlbums: [],
+  userId: null,
+  loading: true,
+  loaded: false,
+  error: null,
+
+  fetchAlbums: async () => {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    // Link any pending invites (email match) before reading shares.
+    await supabase.rpc("accept_my_invites").then(() => undefined, () => undefined);
+
     const [{ data, error }, { data: imgs }] = await Promise.all([
       supabase
         .from("albums")
@@ -24,147 +61,178 @@ export function useAlbums() {
         .select("album_id, sort_order, thumbnail_url, original_url")
         .eq("is_deleted", false),
     ]);
-    if (error) setError(error.message);
-    else {
-      // Derive per-album photo counts and a cover fallback (first photo).
-      // The DB has no counter column, and cover_image_url is never written,
-      // so without this every card would show "0 photos" and no thumbnail.
-      const stats = new Map<
-        string,
-        { count: number; cover: string | null; coverOrder: number }
-      >();
-      for (const img of (imgs ?? []) as Pick<
-        Image,
-        "album_id" | "sort_order" | "thumbnail_url" | "original_url"
-      >[]) {
-        const cur = stats.get(img.album_id);
-        const url = img.thumbnail_url ?? img.original_url;
-        if (!cur) {
-          stats.set(img.album_id, {
-            count: 1,
-            cover: url,
-            coverOrder: img.sort_order,
-          });
-        } else {
-          cur.count += 1;
-          if (url && (cur.cover === null || img.sort_order < cur.coverOrder)) {
-            cur.cover = url;
-            cur.coverOrder = img.sort_order;
-          }
+
+    if (error) {
+      set({ error: error.message, loading: false, loaded: true });
+      return;
+    }
+
+    // Per-album photo count + cover fallback (first photo by sort order).
+    const stats = new Map<
+      string,
+      { count: number; cover: string | null; coverOrder: number }
+    >();
+    for (const img of (imgs ?? []) as ImageStat[]) {
+      const url = img.thumbnail_url ?? img.original_url;
+      const cur = stats.get(img.album_id);
+      if (!cur) {
+        stats.set(img.album_id, { count: 1, cover: url, coverOrder: img.sort_order });
+      } else {
+        cur.count += 1;
+        if (url && (cur.cover === null || img.sort_order < cur.coverOrder)) {
+          cur.cover = url;
+          cur.coverOrder = img.sort_order;
         }
       }
-      setAlbums(
-        (data ?? []).map((a) => ({
-          ...a,
-          image_count: stats.get(a.id)?.count ?? 0,
-          cover_image_url:
-            a.cover_image_url ?? stats.get(a.id)?.cover ?? null,
-        }))
-      );
     }
-    setLoading(false);
-  }, [supabase]);
+
+    const all = ((data ?? []) as Album[]).map((a) => ({
+      ...a,
+      image_count: stats.get(a.id)?.count ?? 0,
+      cover_image_url: a.cover_image_url ?? stats.get(a.id)?.cover ?? null,
+    }));
+
+    // RLS returns shared albums in the same query — split them out so they
+    // never show up under "Your albums" with owner-only actions.
+    const uid = user?.id ?? null;
+    set({
+      userId: uid,
+      albums: all.filter((a) => a.user_id === uid),
+      sharedAlbums: all.filter((a) => a.user_id !== uid),
+      loading: false,
+      loaded: true,
+      error: null,
+    });
+  },
+}));
+
+/** Collect an album and every descendant (any depth). */
+export function collectDescendantIds(albums: Album[], rootId: string): string[] {
+  const out = [rootId];
+  const queue = [rootId];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const a of albums) {
+      if (a.parent_id === cur && !out.includes(a.id)) {
+        out.push(a.id);
+        queue.push(a.id);
+      }
+    }
+  }
+  return out;
+}
+
+/** Walk parent_id links up to the root: [album, parent, grandparent, …]. */
+export function ancestorChain(albums: Album[], id: string): Album[] {
+  const byId = new Map(albums.map((a) => [a.id, a]));
+  const chain: Album[] = [];
+  let cur = byId.get(id);
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    chain.push(cur);
+    cur = cur.parent_id ? byId.get(cur.parent_id) : undefined;
+  }
+  return chain;
+}
+
+export function useAlbums() {
+  const store = useAlbumStore();
+  const supabase = createClient();
 
   useEffect(() => {
-    fetchAlbums();
-  }, [fetchAlbums]);
+    if (!store.loaded && store.loading) void store.fetchAlbums();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const createAlbum = useCallback(
-    async (
-      name: string,
-      parentId: string | null,
-      description?: string
-    ): Promise<Album | null> => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return null;
+  const refetch = store.fetchAlbums;
 
-      const { data: maxRow } = await supabase
-        .from("albums")
-        .select("sort_order")
-        .eq("user_id", user.id)
-        .is("parent_id", parentId)
-        .eq("is_deleted", false)
-        .order("sort_order", { ascending: false })
-        .limit(1);
+  const createAlbum = async (
+    name: string,
+    parentId: string | null,
+    description?: string
+  ): Promise<Album | null> => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
 
-      const nextOrder = (maxRow?.[0]?.sort_order ?? -1) + 1;
+    let q = supabase
+      .from("albums")
+      .select("sort_order")
+      .eq("user_id", user.id)
+      .eq("is_deleted", false)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    q = parentId ? q.eq("parent_id", parentId) : q.is("parent_id", null);
+    const { data: maxRow } = await q;
+    const nextOrder = (maxRow?.[0]?.sort_order ?? -1) + 1;
 
-      const { data, error } = await supabase
+    const { data, error } = await supabase
+      .from("albums")
+      .insert({
+        name,
+        parent_id: parentId,
+        description: description ?? "",
+        user_id: user.id,
+        sort_order: nextOrder,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      toast.error(`Could not create album: ${error.message}`);
+      return null;
+    }
+    await refetch();
+    return data as Album;
+  };
+
+  const renameAlbum = async (id: string, name: string) => {
+    const { error } = await supabase.from("albums").update({ name }).eq("id", id);
+    if (!error) await refetch();
+    return !error;
+  };
+
+  const updateAlbum = async (id: string, updates: Partial<Album>) => {
+    const { error } = await supabase.from("albums").update(updates).eq("id", id);
+    if (!error) await refetch();
+    return !error;
+  };
+
+  /**
+   * Deep-duplicate an album: sub-albums (any depth) and photo rows.
+   * Photo rows point at the same storage objects; permanent deletion only
+   * removes a file once no row references it (see use-trash).
+   */
+  const duplicateAlbum = async (album: Album): Promise<boolean> => {
+    const all = useAlbumStore.getState().albums;
+
+    const copyOne = async (src: Album, parentId: string | null, name: string) => {
+      const { data: copy, error } = await supabase
         .from("albums")
         .insert({
           name,
           parent_id: parentId,
-          description: description ?? "",
-          user_id: user.id,
-          sort_order: nextOrder,
+          description: src.description,
+          user_id: src.user_id,
+          cover_image_url: null,
+          sort_order: src.sort_order + 1,
         })
         .select()
         .single();
+      if (error || !copy) return null;
 
-      if (error) {
-        setError(error.message);
-        toast.error(`Could not create album: ${error.message}`);
-        return null;
-      }
-      await fetchAlbums();
-      return data;
-    },
-    [supabase, fetchAlbums]
-  );
-
-  const renameAlbum = useCallback(
-    async (id: string, name: string) => {
-      const { error } = await supabase
-        .from("albums")
-        .update({ name, updated_at: new Date().toISOString() })
-        .eq("id", id);
-      if (!error) await fetchAlbums();
-      return !error;
-    },
-    [supabase, fetchAlbums]
-  );
-
-  const updateAlbum = useCallback(
-    async (id: string, updates: Partial<Album>) => {
-      const { error } = await supabase
-        .from("albums")
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq("id", id);
-      if (!error) await fetchAlbums();
-      return !error;
-    },
-    [supabase, fetchAlbums]
-  );
-
-  const duplicateAlbum = useCallback(
-    async (album: Album): Promise<boolean> => {
-      const { data: copy, error } = await supabase
-        .from("albums")
-        .insert({
-          name: `${album.name} (copy)`,
-          parent_id: album.parent_id,
-          description: album.description,
-          user_id: album.user_id,
-          cover_image_url: album.cover_image_url,
-          sort_order: album.sort_order + 1,
-        })
-        .select()
-        .single();
-      if (error || !copy) return false;
-
-      // copy images
       const { data: images } = await supabase
         .from("images")
         .select("*")
-        .eq("album_id", album.id)
+        .eq("album_id", src.id)
         .eq("is_deleted", false);
       if (images && images.length > 0) {
         await supabase.from("images").insert(
-          images.map((img) => ({
+          (images as Image[]).map((img) => ({
             album_id: copy.id,
-            group_id: img.group_id,
+            group_id: null,
             user_id: img.user_id,
             file_name: img.file_name,
             original_url: img.original_url,
@@ -178,43 +246,52 @@ export function useAlbums() {
           }))
         );
       }
-      await fetchAlbums();
-      return true;
-    },
-    [supabase, fetchAlbums]
-  );
 
-  // Soft delete → trash
-  const trashAlbum = useCallback(
-    async (id: string) => {
-      const now = new Date().toISOString();
-      const { error } = await supabase
-        .from("albums")
-        .update({ is_deleted: true, deleted_at: now })
-        .eq("id", id);
-      if (!error) await fetchAlbums();
-      return !error;
-    },
-    [supabase, fetchAlbums]
-  );
+      for (const child of all.filter((a) => a.parent_id === src.id)) {
+        await copyOne(child, copy.id, child.name);
+      }
+      return copy as Album;
+    };
 
-  const reorderAlbums = useCallback(
-    async (id: string, sortOrder: number) => {
-      const { error } = await supabase
-        .from("albums")
-        .update({ sort_order: sortOrder })
-        .eq("id", id);
-      if (!error) await fetchAlbums();
-      return !error;
-    },
-    [supabase, fetchAlbums]
-  );
+    const ok = await copyOne(album, album.parent_id, `${album.name} (copy)`);
+    await refetch();
+    return !!ok;
+  };
+
+  /** Soft-delete an album plus all descendants and their photos. */
+  const trashAlbum = async (id: string) => {
+    const ids = collectDescendantIds(useAlbumStore.getState().albums, id);
+    const now = new Date().toISOString();
+    const { error: imgErr } = await supabase
+      .from("images")
+      .update({ is_deleted: true, deleted_at: now })
+      .in("album_id", ids)
+      .eq("is_deleted", false);
+    if (imgErr) return false;
+    const { error } = await supabase
+      .from("albums")
+      .update({ is_deleted: true, deleted_at: now })
+      .in("id", ids);
+    if (!error) await refetch();
+    return !error;
+  };
+
+  const reorderAlbums = async (id: string, sortOrder: number) => {
+    const { error } = await supabase
+      .from("albums")
+      .update({ sort_order: sortOrder })
+      .eq("id", id);
+    if (!error) await refetch();
+    return !error;
+  };
 
   return {
-    albums,
-    loading,
-    error,
-    refetch: fetchAlbums,
+    albums: store.albums,
+    sharedAlbums: store.sharedAlbums,
+    userId: store.userId,
+    loading: store.loading,
+    error: store.error,
+    refetch,
     createAlbum,
     renameAlbum,
     updateAlbum,
@@ -224,21 +301,25 @@ export function useAlbums() {
   };
 }
 
-/** Build a tree from flat album list (2-level: parent → children) */
+/** Build a nested tree (any depth) from the flat album list. */
 export function buildAlbumTree(albums: Album[]): Album[] {
-  const roots = albums.filter((a) => !a.parent_id);
-  const byParent = new Map<string, Album[]>();
+  const byParent = new Map<string | null, Album[]>();
   for (const a of albums) {
-    if (a.parent_id) {
-      const list = byParent.get(a.parent_id) ?? [];
-      list.push(a);
-      byParent.set(a.parent_id, list);
-    }
+    const key = a.parent_id ?? null;
+    const list = byParent.get(key) ?? [];
+    list.push(a);
+    byParent.set(key, list);
   }
-  return roots.map((root) => ({
-    ...root,
-    children: (byParent.get(root.id) ?? []).sort(
-      (x, y) => x.sort_order - y.sort_order
-    ),
-  }));
+  const ids = new Set(albums.map((a) => a.id));
+  const build = (parent: string | null): Album[] =>
+    (byParent.get(parent) ?? [])
+      .slice()
+      .sort((x, y) => x.sort_order - y.sort_order || x.created_at.localeCompare(y.created_at))
+      .map((a) => ({ ...a, children: build(a.id) }));
+
+  // Roots: no parent, or a parent we can't see (e.g. parent is trashed).
+  const roots = albums.filter((a) => !a.parent_id || !ids.has(a.parent_id));
+  return roots
+    .sort((x, y) => x.sort_order - y.sort_order || x.created_at.localeCompare(y.created_at))
+    .map((a) => ({ ...a, children: build(a.id) }));
 }
