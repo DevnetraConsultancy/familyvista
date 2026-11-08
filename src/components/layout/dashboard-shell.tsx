@@ -20,7 +20,7 @@ import { AlbumSidebar } from "@/components/layout/album-sidebar";
 import { UploadTray } from "@/components/images/upload-tray";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { HelpDialog } from "@/components/help-dialog";
-import { LogoMark, Wordmark } from "@/components/brand/logo";
+import { Logo, LogoMark } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -209,9 +209,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             !contentVisible && "opacity-0"
           )}
         >
-          <Link href="/dashboard" className="flex items-center gap-2.5 overflow-hidden">
-            <LogoMark className="h-7 w-7" />
-            <Wordmark />
+          <Link href="/dashboard" className="flex items-center overflow-hidden">
+            <Logo size="sm" />
           </Link>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -270,7 +269,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 className="hidden items-center gap-2 pr-1 lg:flex"
                 aria-label="FamilyVista home"
               >
-                <LogoMark className="h-6 w-6" />
+                <LogoMark className="h-7 w-7" />
               </Link>
             )}
             <Breadcrumbs />

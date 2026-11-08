@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   Grid2x2,
@@ -537,52 +536,6 @@ export default function AlbumPage() {
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-6">
-          {/* Sub-albums */}
-          {(children.length > 0 || (isOwner && images.length > 0)) && (
-            <section className="mb-6">
-              <div className="mb-2.5 flex items-center justify-between">
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Sub-albums
-                </h2>
-              </div>
-              <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-thin">
-                {children.map((c) => (
-                  <Link
-                    key={c.id}
-                    href={`/dashboard/album/${c.id}`}
-                    className="group flex w-44 shrink-0 items-center gap-3 rounded-lg border border-[var(--glass-border)] bg-[var(--glass)] p-2 transition-colors hover:bg-[var(--glass-hover)]"
-                  >
-                    <div className="h-12 w-14 shrink-0 overflow-hidden rounded-md bg-black/40">
-                      {c.cover_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={c.cover_image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <Folder className="h-5 w-5 text-gold/50" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{c.name}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {c.image_count ?? 0} photo{c.image_count === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-                {isOwner && (
-                  <button
-                    onClick={() => setSubOpen(true)}
-                    className="flex h-[66px] w-36 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--line)] text-sm text-muted-foreground transition-colors hover:border-gold/50 hover:bg-[var(--gold-soft)] hover:text-foreground"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Sub-album
-                  </button>
-                )}
-              </div>
-            </section>
-          )}
-
           {loading && images.length === 0 ? (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -597,17 +550,7 @@ export default function AlbumPage() {
                 description="The owner hasn't added any photos yet. Check back soon."
               />
             ) : (
-              <div className="space-y-6">
-                {children.length === 0 && isOwner && (
-                  <div className="flex justify-end">
-                    <Button variant="ghost" size="sm" onClick={() => setSubOpen(true)}>
-                      <Plus className="h-3.5 w-3.5" />
-                      Add sub-album
-                    </Button>
-                  </div>
-                )}
-                <UploadZone albumId={id} />
-              </div>
+              <UploadZone albumId={id} />
             )
           ) : (
             <>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { GoogleSignInButton } from "@/components/google-signin-button";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { LogoMark, Wordmark } from "@/components/brand/logo";
+import { Logo, LogoMark } from "@/components/brand/logo";
 
 export function LoginForm() {
   const searchParams = useSearchParams();
@@ -22,9 +22,8 @@ export function LoginForm() {
   return (
     <div className="ambient-gold relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-5">
       <div className="absolute left-5 top-5 z-10">
-        <Link href="/" className="flex items-center gap-2.5">
-          <LogoMark />
-          <Wordmark />
+        <Link href="/" className="inline-flex">
+          <Logo />
         </Link>
       </div>
       <div className="absolute right-4 top-4 z-10">

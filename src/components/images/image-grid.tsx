@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -43,6 +43,89 @@ import { useUIStore } from "@/lib/store";
 import type { Image, ViewMode } from "@/lib/types";
 import { cn, formatBytes, formatDate } from "@/lib/utils";
 import { ImageViewer } from "@/components/images/image-viewer";
+
+// ---------- Justified layout ----------
+// Flickr/Google-Photos style rows: each photo keeps its own aspect ratio and
+// every row is scaled so it fills the container width — no cropping.
+const FALLBACK_RATIO = 4 / 3;
+
+function ratioOf(img: Image) {
+  const r =
+    img.width && img.height && img.width > 0 && img.height > 0
+      ? img.width / img.height
+      : FALLBACK_RATIO;
+  // Extreme panoramas / strips would otherwise own a whole row.
+  return Math.min(Math.max(r, 0.45), 3.2);
+}
+
+interface Placed {
+  id: string;
+  w: number;
+  h: number;
+}
+
+function layoutJustified(
+  images: Image[],
+  width: number,
+  targetH: number,
+  gap: number
+): Placed[][] {
+  const rows: Placed[][] = [];
+  let row: Image[] = [];
+  let sum = 0;
+
+  const flush = (last: boolean) => {
+    if (row.length === 0) return;
+    const avail = width - gap * (row.length - 1);
+    let h = avail / sum;
+    // A short final row is left-aligned at the target height instead of
+    // being blown up to fill the width.
+    const stretch = !(last && h > targetH * 1.25);
+    if (!stretch) h = targetH;
+    const placed = row.map((img) => ({
+      id: img.id,
+      w: Math.floor(ratioOf(img) * h),
+      h: Math.round(h),
+    }));
+    if (stretch) {
+      // Hand rounding leftovers to the last tile so the row is pixel-exact.
+      const used = placed.reduce((a, p) => a + p.w, 0);
+      placed[placed.length - 1].w += avail - used;
+    }
+    rows.push(placed);
+    row = [];
+    sum = 0;
+  };
+
+  for (const img of images) {
+    const r = ratioOf(img);
+    const next = sum + r;
+    const availNext = width - gap * row.length;
+    if (row.length > 0 && next * targetH >= availNext) {
+      // The row overflows with this photo. Keep whichever option lands the
+      // row height closest to the target: a slightly tall row without it,
+      // or a slightly short row with it.
+      const hWith = availNext / next;
+      const hWithout = (width - gap * (row.length - 1)) / sum;
+      const closerWithout =
+        Math.abs(Math.log(hWithout / targetH)) < Math.abs(Math.log(hWith / targetH));
+      if (closerWithout) {
+        flush(false);
+        row.push(img);
+        sum = r;
+        continue;
+      }
+      row.push(img);
+      sum = next;
+      flush(false);
+      continue;
+    }
+    row.push(img);
+    sum = next;
+  }
+  flush(true);
+  return rows;
+}
 
 interface Props {
   images: Image[];
@@ -115,6 +198,31 @@ export function ImageGrid({
   const activeImage = images.find((i) => i.id === activeId) ?? null;
   const canDrag = dragEnabled && !readOnly && !selectionMode;
 
+  // Justified rows need the container width; measured via ResizeObserver so
+  // the layout re-flows with the sidebar, drawer and window.
+  const justified = viewMode === "large" || viewMode === "play";
+  const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+  useEffect(() => {
+    if (!gridEl) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setGridWidth(Math.round(entry.contentRect.width));
+    });
+    ro.observe(gridEl);
+    return () => ro.disconnect();
+  }, [gridEl]);
+
+  const gap = borderSettings.enabled ? Math.max(4, borderSettings.width) : 12;
+  const rows = useMemo(() => {
+    if (!justified || gridWidth <= 0) return null;
+    const targetH = Math.min(280, Math.max(150, gridWidth / 4.5));
+    return layoutJustified(images, gridWidth, targetH, gap);
+  }, [justified, gridWidth, images, gap]);
+  const indexOf = useMemo(
+    () => new Map(images.map((img, i) => [img.id, i] as const)),
+    [images]
+  );
+
   const handleDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
   const handleDragEnd = (e: DragEndEvent) => {
     setActiveId(null);
@@ -169,47 +277,75 @@ export function ImageGrid({
           items={images.map((i) => i.id)}
           strategy={viewMode === "list" ? verticalListSortingStrategy : rectSortingStrategy}
         >
-          <div
-            className={cn(
-              viewMode === "small" &&
-                "grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 2xl:grid-cols-10",
-              (viewMode === "large" || viewMode === "play") &&
-                "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4",
-              viewMode === "list" && "flex flex-col gap-1.5"
-            )}
-            style={
-              borderSettings.enabled && viewMode !== "list"
-                ? { gap: `${Math.max(4, borderSettings.width)}px` }
-                : undefined
+          {(() => {
+            const tile = (img: Image, size?: Placed) => {
+              const idx = indexOf.get(img.id) ?? 0;
+              return (
+                <SortableTile
+                  key={img.id}
+                  image={img}
+                  index={idx}
+                  size={size}
+                  viewMode={viewMode}
+                  readOnly={readOnly}
+                  dragEnabled={canDrag}
+                  onClick={(e) => handleTileClick(img, e)}
+                  onOpen={() => {
+                    setAutoplay(false);
+                    setViewerIndex(idx);
+                  }}
+                  onSelectToggle={() => {
+                    if (!selectionMode) useUIStore.getState().toggleSelectionMode();
+                    toggleSelected(img.id);
+                    lastClicked.current = img.id;
+                  }}
+                  onRename={() => onRename(img)}
+                  onTrash={() => onTrash([img.id])}
+                  onDuplicate={() => onDuplicate([img.id])}
+                  onMove={() => onMove([img.id])}
+                  onProperties={() => onProperties(img)}
+                  onTrashSelected={() => onTrash(Array.from(selectedIds))}
+                />
+              );
+            };
+
+            if (justified) {
+              const byId = new Map(images.map((i) => [i.id, i] as const));
+              return (
+                <div ref={setGridEl} className="flex flex-col" style={{ gap }}>
+                  {rows
+                    ? rows.map((row, r) => (
+                        <div key={r} className="flex" style={{ gap }}>
+                          {row.map((p) => {
+                            const img = byId.get(p.id);
+                            return img ? tile(img, p) : null;
+                          })}
+                        </div>
+                      ))
+                    : // One frame before the first measurement: keep the old
+                      // responsive grid so nothing jumps.
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                        {images.map((img) => tile(img))}
+                      </div>}
+                </div>
+              );
             }
-          >
-            {images.map((img, idx) => (
-              <SortableTile
-                key={img.id}
-                image={img}
-                index={idx}
-                viewMode={viewMode}
-                readOnly={readOnly}
-                dragEnabled={canDrag}
-                onClick={(e) => handleTileClick(img, e)}
-                onOpen={() => {
-                  setAutoplay(false);
-                  setViewerIndex(idx);
-                }}
-                onSelectToggle={() => {
-                  if (!selectionMode) useUIStore.getState().toggleSelectionMode();
-                  toggleSelected(img.id);
-                  lastClicked.current = img.id;
-                }}
-                onRename={() => onRename(img)}
-                onTrash={() => onTrash([img.id])}
-                onDuplicate={() => onDuplicate([img.id])}
-                onMove={() => onMove([img.id])}
-                onProperties={() => onProperties(img)}
-                onTrashSelected={() => onTrash(Array.from(selectedIds))}
-              />
-            ))}
-          </div>
+
+            return (
+              <div
+                className={cn(
+                  viewMode === "small" &&
+                    "grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 2xl:grid-cols-10",
+                  viewMode === "list" && "flex flex-col gap-1.5"
+                )}
+                style={
+                  borderSettings.enabled && viewMode === "small" ? { gap } : undefined
+                }
+              >
+                {images.map((img) => tile(img))}
+              </div>
+            );
+          })()}
         </SortableContext>
 
         <DragOverlay dropAnimation={null}>
@@ -248,6 +384,7 @@ export function ImageGrid({
 function SortableTile({
   image,
   index,
+  size,
   viewMode,
   readOnly,
   dragEnabled,
@@ -263,6 +400,8 @@ function SortableTile({
 }: {
   image: Image;
   index: number;
+  /** Pixel box from the justified layout; absent in small/list modes. */
+  size?: Placed;
   viewMode: ViewMode;
   readOnly: boolean;
   dragEnabled: boolean;
@@ -289,6 +428,7 @@ function SortableTile({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.35 : 1,
+    ...(size ? { width: size.w, height: size.h, flex: "0 0 auto" } : {}),
   };
 
   const borderStyle: React.CSSProperties = borderSettings.enabled
@@ -446,7 +586,7 @@ function SortableTile({
             tabIndex={0}
             className={cn(
               "relative cursor-pointer overflow-hidden rounded-lg bg-black/40 transition-[box-shadow,transform] duration-200",
-              viewMode === "small" ? "aspect-square" : "aspect-[4/3]",
+              size ? "h-full w-full" : viewMode === "small" ? "aspect-square" : "aspect-[4/3]",
               selected && "tile-selected",
               !selected && "hover:shadow-[0_12px_30px_-12px_rgba(0,0,0,0.7)]"
             )}

@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { HelpDialog } from "@/components/help-dialog";
 import { GoogleSignInButton } from "@/components/google-signin-button";
-import { LogoMark, Wordmark } from "@/components/brand/logo";
+import { Logo } from "@/components/brand/logo";
 import {
   Images,
   FolderTree,
@@ -91,10 +91,7 @@ export default async function Home() {
       {/* Nav */}
       <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-background/70 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-5 sm:px-8">
-          <div className="flex items-center gap-2.5">
-            <LogoMark />
-            <Wordmark />
-          </div>
+          <Logo />
           <div className="flex items-center gap-1">
             <HelpDialog trigger="labeled" />
             <ThemeToggle />
