@@ -2,8 +2,10 @@
 
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
-import { uploadFileWithProgress, buildObjectPath } from "@/lib/supabase/tus-upload";
-import { optimizeForUpload } from "@/lib/image-optimize";
+// The TUS client and the image compressors are loaded on the first upload,
+// not on every dashboard page view.
+const loadTus = () => import("@/lib/supabase/tus-upload");
+const loadOptimizer = () => import("@/lib/image-optimize");
 import { makeThumbnail, readImageDimensions } from "@/lib/thumbnail";
 import { isImageFile } from "@/lib/utils";
 
@@ -93,6 +95,12 @@ export const useUploadStore = create<UploadState>((set, get) => {
     const supabase = createClient();
     const controller = new AbortController();
     patch(id, { controller });
+    // Storage paths written for this item, removed again if the photo never
+    // makes it into the database (cancel or insert failure).
+    const stored: string[] = [];
+    const throwIfAborted = () => {
+      if (controller.signal.aborted) throw new DOMException("Upload aborted", "AbortError");
+    };
 
     try {
       const {
@@ -105,6 +113,7 @@ export const useUploadStore = create<UploadState>((set, get) => {
 
       // Compress before upload (mozjpeg q90 / lossless oxipng); the helper
       // guarantees the result is never bigger than the original.
+      const { optimizeForUpload } = await loadOptimizer();
       const { blob } = await optimizeForUpload(original);
       const finalFile =
         blob === original
@@ -122,6 +131,7 @@ export const useUploadStore = create<UploadState>((set, get) => {
         makeThumbnail(original).catch(() => null),
       ]);
 
+      const { uploadFileWithProgress, buildObjectPath } = await loadTus();
       const path = buildObjectPath(user.id, item.albumId, item.fileName);
       await uploadFileWithProgress(finalFile, path, {
         accessToken,
@@ -129,6 +139,8 @@ export const useUploadStore = create<UploadState>((set, get) => {
         signal: controller.signal,
       });
 
+      stored.push(path);
+      throwIfAborted();
       patch(id, { status: "processing" });
 
       const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
@@ -146,10 +158,12 @@ export const useUploadStore = create<UploadState>((set, get) => {
             upsert: false,
           });
         if (!thumbErr) {
+          stored.push(thumbPath);
           thumbUrl = supabase.storage.from(BUCKET).getPublicUrl(thumbPath).data.publicUrl;
         }
       }
 
+      throwIfAborted();
       const { error: dbErr } = await supabase.from("images").insert({
         album_id: item.albumId,
         group_id: null,
@@ -173,6 +187,14 @@ export const useUploadStore = create<UploadState>((set, get) => {
         },
       }));
     } catch (err) {
+      // No database row points at these files, so nothing would ever
+      // clean them up; a retry uploads under a fresh path anyway.
+      if (stored.length) {
+        await supabase.storage.from(BUCKET).remove(stored).then(
+          () => undefined,
+          () => undefined
+        );
+      }
       const aborted = err instanceof DOMException && err.name === "AbortError";
       if (aborted) {
         set((s) => ({ items: s.items.filter((i) => i.id !== id) }));

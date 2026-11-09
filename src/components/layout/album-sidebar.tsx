@@ -153,7 +153,7 @@ export function AlbumSidebar({ visible }: { visible: boolean }) {
         )}
       >
         {/* New album */}
-        <div className="px-3 pb-2 pt-1">
+        <div className="px-3 pb-2 pt-3">
           <Button
             className="w-full"
             onClick={() => {

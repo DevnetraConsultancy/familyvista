@@ -9,10 +9,13 @@ import { cn } from "@/lib/utils";
 export function LogoMark({
   className,
   rounded = "rounded-[24%]",
+  large = false,
 }: {
   className?: string;
   /** Tailwind radius class for the badge (default a soft squircle). */
   rounded?: string;
+  /** Badges above ~48px (login card, help) use the 256px file. */
+  large?: boolean;
 }) {
   return (
     <span
@@ -26,8 +29,11 @@ export function LogoMark({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/brand/logo-mark.webp"
+        src={large ? "/brand/logo-mark-256.webp" : "/brand/logo-mark-128.webp"}
         alt=""
+        width={large ? 256 : 128}
+        height={large ? 256 : 128}
+        decoding="async"
         draggable={false}
         className="h-full w-full select-none object-contain"
       />

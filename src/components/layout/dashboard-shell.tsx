@@ -10,7 +10,6 @@ import {
   LogOut,
   ChevronRight,
   ChevronDown,
-  Images,
   Users,
 } from "lucide-react";
 import { useUIStore } from "@/lib/store";
@@ -20,7 +19,7 @@ import { AlbumSidebar } from "@/components/layout/album-sidebar";
 import { UploadTray } from "@/components/images/upload-tray";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { HelpDialog } from "@/components/help-dialog";
-import { Logo, LogoMark } from "@/components/brand/logo";
+import { SiteHeader } from "@/components/layout/site-header";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -190,121 +189,92 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   // "collapsed" preference there (it used to hide the drawer's contents).
   const contentVisible = sidebarOpen || mobileOpen;
 
+
   return (
-    <div className="relative flex h-dvh overflow-hidden bg-background">
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          "z-30 flex h-full shrink-0 flex-col overflow-hidden border-r border-[var(--line)] bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
-          "lg:w-[272px]",
-          !sidebarOpen && "lg:w-0 lg:border-r-0",
-          "max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:w-[288px] max-lg:shadow-[var(--glass-shadow-lg)]",
-          mobileOpen ? "max-lg:translate-x-0" : "max-lg:-translate-x-full"
-        )}
-        aria-hidden={!contentVisible}
-      >
-        <div
-          className={cn(
-            "flex h-14 shrink-0 items-center justify-between pl-4 pr-2 transition-opacity",
-            !contentVisible && "opacity-0"
-          )}
-        >
-          <Link href="/dashboard" className="flex items-center overflow-hidden">
-            <Logo size="sm" />
-          </Link>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => (mobileOpen ? setMobileOpen(false) : toggleSidebar())}
-                aria-label="Hide sidebar"
-              >
-                <PanelLeftClose />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              Hide sidebar <kbd className="ml-1 opacity-70">S</kbd>
-            </TooltipContent>
-          </Tooltip>
+    <div className="app-shell flex h-dvh flex-col overflow-hidden bg-background">
+      {/* Locked brand bar — identical to the public pages. */}
+      <SiteHeader homeHref="/dashboard">
+        <HelpDialog />
+        <ThemeToggle />
+        <div className="ml-1">
+          <UserMenu />
         </div>
+      </SiteHeader>
 
-        <AlbumSidebar visible={contentVisible} />
-      </aside>
+      {/* Everything below the brand bar. The sidebar and drawer live here,
+          so opening/closing them can never move the header or the logo. */}
+      <div className="relative flex min-h-0 flex-1">
+        <aside
+          className={cn(
+            // visibility is transitioned too, so a closed panel is fully
+            // hidden (no edge shadow, no ghost) only after it has slid away.
+            "z-30 h-full shrink-0 overflow-hidden border-r border-[var(--line)] bg-sidebar text-sidebar-foreground transition-[width,transform,visibility,box-shadow] duration-200 ease-out",
+            "lg:w-[272px]",
+            !sidebarOpen && "lg:invisible lg:w-0 lg:border-r-0",
+            "max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:w-[288px]",
+            mobileOpen
+              ? "max-lg:visible max-lg:translate-x-0 max-lg:shadow-[var(--glass-shadow-lg)]"
+              : "max-lg:invisible max-lg:-translate-x-full"
+          )}
+          aria-label="Albums"
+          aria-hidden={!contentVisible}
+          inert={!contentVisible}
+        >
+          {/* Fixed-width inner column: the panel is clipped while it
+              animates instead of re-flowing its contents. */}
+          <div className="flex h-full w-[272px] flex-col max-lg:w-[288px]">
+            <AlbumSidebar visible={contentVisible} />
+          </div>
+        </aside>
 
-      {/* Main column */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[var(--line)] bg-background/80 px-3 backdrop-blur sm:px-4">
-          <div className="flex min-w-0 items-center gap-2">
-            {!sidebarOpen && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="hidden lg:inline-flex"
-                    onClick={toggleSidebar}
-                    aria-label="Show sidebar"
-                  >
-                    <PanelLeftOpen />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  Show sidebar <kbd className="ml-1 opacity-70">S</kbd>
-                </TooltipContent>
-              </Tooltip>
-            )}
+        {/* Main column */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-[var(--line)] px-2 sm:px-3">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="hidden lg:inline-flex"
+                  onClick={toggleSidebar}
+                  aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                  aria-expanded={sidebarOpen}
+                >
+                  {sidebarOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {sidebarOpen ? "Hide sidebar" : "Show sidebar"} <kbd className="ml-1 opacity-70">S</kbd>
+              </TooltipContent>
+            </Tooltip>
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               className="lg:hidden"
               onClick={() => setMobileOpen((v) => !v)}
-              aria-label="Open sidebar"
+              aria-label={mobileOpen ? "Close albums" : "Open albums"}
+              aria-expanded={mobileOpen}
             >
-              <PanelLeftOpen />
+              {mobileOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
             </Button>
-            {!sidebarOpen && (
-              <Link
-                href="/dashboard"
-                className="hidden items-center gap-2 pr-1 lg:flex"
-                aria-label="FamilyVista home"
-              >
-                <LogoMark className="h-7 w-7" />
-              </Link>
-            )}
+            <span className="mx-1 h-4 w-px bg-[var(--line)]" aria-hidden />
             <Breadcrumbs />
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" asChild aria-label="All albums">
-                  <Link href="/dashboard">
-                    <Images />
-                  </Link>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">All albums</TooltipContent>
-            </Tooltip>
-            <HelpDialog />
-            <ThemeToggle />
-            <div className="ml-1">
-              <UserMenu />
-            </div>
-          </div>
-        </header>
+          <main id="main" className="min-h-0 flex-1 overflow-auto scrollbar-thin">
+            {children}
+          </main>
+        </div>
 
-        <main className="min-h-0 flex-1 overflow-auto scrollbar-thin">{children}</main>
+        {/* Mobile scrim — covers the content only, never the brand bar. */}
+        {mobileOpen && (
+          <div
+            className="absolute inset-0 z-20 bg-black/60 backdrop-blur-[2px] lg:hidden"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden
+          />
+        )}
       </div>
-
-      {/* Mobile scrim */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/60 backdrop-blur-[2px] lg:hidden"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden
-        />
-      )}
 
       {/* Global upload progress tray (survives album navigation) */}
       <UploadTray />

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/paginate";
 import { useUploadStore } from "@/lib/upload-store";
 import { useAlbumStore } from "@/lib/hooks/use-albums";
 import { stripExtension, getFileExtension } from "@/lib/utils";
@@ -19,13 +20,18 @@ export function useImages(albumId: string | null) {
   const load = useCallback(async () => {
     if (!albumId) return null;
     const [imgRes, grpRes] = await Promise.all([
-      supabase
-        .from("images")
-        .select("*")
-        .eq("album_id", albumId)
-        .eq("is_deleted", false)
-        .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: true }),
+      // Paged: albums can hold more photos than one API response returns.
+      fetchAllRows((from, to) =>
+        supabase
+          .from("images")
+          .select("*")
+          .eq("album_id", albumId)
+          .eq("is_deleted", false)
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true })
+          .order("id")
+          .range(from, to)
+      ),
       supabase
         .from("image_groups")
         .select("*")

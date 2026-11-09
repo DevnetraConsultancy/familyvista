@@ -1,3 +1,7 @@
+-- NOTE (2026-11-08): after running this file, also run security-hardening.sql.
+-- It replaces the RLS policies below with hardened versions and closes a
+-- share-forging hole. security-hardening.sql is safe to run more than once.
+
 -- ============================================================
 -- FamilyVista — Album Sharing (run AFTER schema.sql)
 -- v2 — uses JWT email matching. Do NOT subquery auth.users in RLS:

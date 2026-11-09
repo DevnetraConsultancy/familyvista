@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -66,9 +66,21 @@ export function UploadTray() {
   const clearFinished = useUploadStore((s) => s.clearFinished);
   const [expanded, setExpanded] = useState(true);
 
+  const activeCount = items.filter((i) => ACTIVE.has(i.status) || i.status === "queued").length;
+
+  // Closing or reloading the tab drops the in-memory queue: ask first.
+  useEffect(() => {
+    if (activeCount === 0) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [activeCount]);
+
   if (items.length === 0) return null;
 
-  const activeCount = items.filter((i) => ACTIVE.has(i.status) || i.status === "queued").length;
   const done = items.filter((i) => i.status === "done").length;
   const failed = items.filter((i) => i.status === "error").length;
   const totalBytes = items.reduce((acc, i) => acc + i.size, 0);

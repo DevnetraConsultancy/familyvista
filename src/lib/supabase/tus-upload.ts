@@ -66,11 +66,10 @@ export function uploadFileWithProgress(
       signal.addEventListener(
         "abort",
         () => {
-          try {
-            upload.abort();
-          } catch {
-            /* already finished */
-          }
+          // abort(true) also tells the server to discard the partial upload.
+          upload.abort(true).catch(() => {
+            /* already finished or never started */
+          });
           reject(new DOMException("Upload aborted", "AbortError"));
         },
         { once: true }

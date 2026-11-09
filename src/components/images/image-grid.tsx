@@ -42,7 +42,13 @@ import {
 import { useUIStore } from "@/lib/store";
 import type { Image, ViewMode } from "@/lib/types";
 import { cn, formatBytes, formatDate } from "@/lib/utils";
-import { ImageViewer } from "@/components/images/image-viewer";
+import dynamic from "next/dynamic";
+
+// The viewer (and framer-motion) loads only when a photo is opened.
+const ImageViewer = dynamic(
+  () => import("@/components/images/image-viewer").then((m) => m.ImageViewer),
+  { ssr: false }
+);
 
 // ---------- Justified layout ----------
 // Flickr/Google-Photos style rows: each photo keeps its own aspect ratio and

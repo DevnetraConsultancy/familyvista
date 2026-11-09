@@ -104,7 +104,7 @@ export function HelpDialog({
       <DialogContent className="max-w-md gap-0 p-6 sm:p-7">
         {/* Brand header */}
         <div className="flex flex-col items-center text-center">
-          <LogoMark className="mb-3 h-16 w-16" rounded="rounded-full" />
+          <LogoMark className="mb-3 h-16 w-16" rounded="rounded-full" large />
           <DialogTitle className="font-display text-[1.75rem] font-semibold">
             Family<span className="text-gold-grad">Vista</span>
           </DialogTitle>
@@ -169,7 +169,7 @@ export function HelpDialog({
             <a
               href="https://instagram.com/scien_nee"
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
             >
               <InstagramIcon className="h-3.5 w-3.5 text-gold" />

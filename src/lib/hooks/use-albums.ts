@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows, chunk } from "@/lib/supabase/paginate";
 import type { Album, Image } from "@/lib/types";
 
 /**
@@ -32,6 +33,56 @@ type ImageStat = Pick<
   "album_id" | "sort_order" | "thumbnail_url" | "original_url"
 >;
 
+type AlbumStats = Map<string, { count: number; cover: string | null }>;
+
+/**
+ * Per-album photo count + cover (first photo by sort order).
+ *
+ * Uses the `album_stats` view (one row per album, computed in Postgres). If
+ * the view isn't deployed yet, falls back to aggregating photo rows here —
+ * paged, because PostgREST caps a single response at 1000 rows and counts
+ * silently stopped at 1000 before.
+ */
+async function loadAlbumStats(supabase: ReturnType<typeof createClient>): Promise<AlbumStats> {
+  const stats: AlbumStats = new Map();
+
+  const view = await supabase.from("album_stats").select("album_id, image_count, cover_url");
+  if (!view.error) {
+    for (const r of view.data as { album_id: string; image_count: number; cover_url: string | null }[]) {
+      stats.set(r.album_id, { count: r.image_count, cover: r.cover_url });
+    }
+    return stats;
+  }
+
+  const PAGE = 1000;
+  const order = new Map<string, number>();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("images")
+      .select("album_id, sort_order, thumbnail_url, original_url")
+      .eq("is_deleted", false)
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error || !data) break;
+    for (const img of data as ImageStat[]) {
+      const url = img.thumbnail_url ?? img.original_url;
+      const cur = stats.get(img.album_id);
+      if (!cur) {
+        stats.set(img.album_id, { count: 1, cover: url });
+        order.set(img.album_id, img.sort_order);
+      } else {
+        cur.count += 1;
+        if (url && (cur.cover === null || img.sort_order < (order.get(img.album_id) ?? Infinity))) {
+          cur.cover = url;
+          order.set(img.album_id, img.sort_order);
+        }
+      }
+    }
+    if (data.length < PAGE) break;
+  }
+  return stats;
+}
+
 export const useAlbumStore = create<AlbumState>((set) => ({
   albums: [],
   sharedAlbums: [],
@@ -42,48 +93,29 @@ export const useAlbumStore = create<AlbumState>((set) => ({
 
   fetchAlbums: async () => {
     const supabase = createClient();
+    // The local session is enough to know *who* we are (RLS enforces access
+    // server-side); getUser() would add an Auth round-trip to every refresh.
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user ?? null;
 
     // Link any pending invites (email match) before reading shares.
     await supabase.rpc("accept_my_invites").then(() => undefined, () => undefined);
 
-    const [{ data, error }, { data: imgs }] = await Promise.all([
+    const [{ data, error }, stats] = await Promise.all([
       supabase
         .from("albums")
         .select("*")
         .eq("is_deleted", false)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
-      supabase
-        .from("images")
-        .select("album_id, sort_order, thumbnail_url, original_url")
-        .eq("is_deleted", false),
+      loadAlbumStats(supabase),
     ]);
 
     if (error) {
       set({ error: error.message, loading: false, loaded: true });
       return;
-    }
-
-    // Per-album photo count + cover fallback (first photo by sort order).
-    const stats = new Map<
-      string,
-      { count: number; cover: string | null; coverOrder: number }
-    >();
-    for (const img of (imgs ?? []) as ImageStat[]) {
-      const url = img.thumbnail_url ?? img.original_url;
-      const cur = stats.get(img.album_id);
-      if (!cur) {
-        stats.set(img.album_id, { count: 1, cover: url, coverOrder: img.sort_order });
-      } else {
-        cur.count += 1;
-        if (url && (cur.cover === null || img.sort_order < cur.coverOrder)) {
-          cur.cover = url;
-          cur.coverOrder = img.sort_order;
-        }
-      }
     }
 
     const all = ((data ?? []) as Album[]).map((a) => ({
@@ -223,14 +255,22 @@ export function useAlbums() {
         .single();
       if (error || !copy) return null;
 
-      const { data: images } = await supabase
-        .from("images")
-        .select("*")
-        .eq("album_id", src.id)
-        .eq("is_deleted", false);
-      if (images && images.length > 0) {
-        await supabase.from("images").insert(
-          (images as Image[]).map((img) => ({
+      // Paged read + batched insert: big albums used to stop silently at the
+      // API's 1000-row cap, and a failed insert still reported success.
+      const { data: images, error: readErr } = await fetchAllRows<Image>((from, to) =>
+        supabase
+          .from("images")
+          .select("*")
+          .eq("album_id", src.id)
+          .eq("is_deleted", false)
+          .order("sort_order")
+          .order("id")
+          .range(from, to)
+      );
+      if (readErr) return null;
+      for (const batch of chunk(images, 500)) {
+        const { error: insErr } = await supabase.from("images").insert(
+          batch.map((img) => ({
             album_id: copy.id,
             group_id: null,
             user_id: img.user_id,
@@ -245,10 +285,11 @@ export function useAlbums() {
             sort_order: img.sort_order,
           }))
         );
+        if (insErr) return null;
       }
 
       for (const child of all.filter((a) => a.parent_id === src.id)) {
-        await copyOne(child, copy.id, child.name);
+        if (!(await copyOne(child, copy.id, child.name))) return null;
       }
       return copy as Album;
     };

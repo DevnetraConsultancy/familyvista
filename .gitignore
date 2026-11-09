@@ -44,3 +44,8 @@ next-env.d.ts
 
 # local tooling
 .claude/
+
+!.env.example
+
+# Supabase CLI local link state
+supabase/.temp/

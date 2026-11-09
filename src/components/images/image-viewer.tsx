@@ -247,7 +247,7 @@ export function ImageViewer({
                   href={current.original_url}
                   download={current.file_name}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   aria-label="Open original"
                 >
                   <Download />
